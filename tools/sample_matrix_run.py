@@ -56,7 +56,7 @@ PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 # if the user's plan / model behavior changes.
 DEFAULT_SONNET_WEEKLY = 30_000_000
 DEFAULT_ALL_MODELS_WEEKLY = 50_000_000
-DEFAULT_SESSION_ALL_MODELS = 50_000_000  # 5-hour window all-models cap; placeholder
+DEFAULT_SESSION_ALL_MODELS = 5_000_000  # 5-hour window all-models cap; rough Max-20x estimate, override via flag
 DEFAULT_FRACTION = 0.9
 DEFAULT_TOKENS_PER_CELL = 50_000
 DEFAULT_ANALYSIS_TOKENS = 250_000
@@ -346,7 +346,7 @@ def main() -> None:
                         help='All-models weekly budget in tokens (default: 50M)')
     p_init.add_argument('--session-all-models', dest='session_all_models',
                         type=int, default=DEFAULT_SESSION_ALL_MODELS,
-                        help='5-hour-window all-models cap in tokens (default: 50M placeholder; tune to actual plan)')
+                        help='5-hour-window all-models cap in tokens (default: 5M; tune to actual plan)')
     p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
                         type=int, default=DEFAULT_ANALYSIS_TOKENS,
                         help='Phase 5 analysis subagent token estimate (default: 250k)')
