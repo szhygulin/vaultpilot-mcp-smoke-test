@@ -1,0 +1,162 @@
+{
+  "addressBook": {
+    "Alice": {
+      "evm": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      "btc": "bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h",
+      "solana": "H8sMJSCQxfKiFTCfDR3DUMLPwcRbM61LGFJ8N4dK3WjS",
+      "tron": "TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm"
+    },
+    "Bob": {
+      "evm": "0x176F3DAb24a159341c0509bB36B833E7fdd0a132",
+      "solana": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+      "tron": "THPvaUhoh2Qn2y9THCZML3H815hhFhn5YC"
+    },
+    "Carol": {
+      "evm": "0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503",
+      "solana": "5xoBq7f7CDgZwqHrDBdRWM84ExRetg4gZq93dyJtoSwp"
+    },
+    "Dave": {
+      "evm": "0x8EB8a3b98659Cce290402893d0123abb75E3ab28"
+    }
+  },
+  "scripts": [
+    { "id": "001", "category": "send_native", "chain": "ethereum", "script": "Send 0.5 ETH from my wallet to Alice on Ethereum mainnet" },
+    { "id": "002", "category": "send_native", "chain": "base",     "script": "Send 1 ETH to Bob on Base" },
+    { "id": "003", "category": "send_native", "chain": "arbitrum", "script": "Transfer 0.25 ETH to Carol on Arbitrum One" },
+    { "id": "004", "category": "send_native", "chain": "polygon",  "script": "Send 50 MATIC to Dave on Polygon PoS" },
+    { "id": "005", "category": "send_native", "chain": "optimism", "script": "Send 0.1 ETH to 0x176F3DAb24a159341c0509bB36B833E7fdd0a132 on Optimism" },
+    { "id": "006", "category": "send_native", "chain": "solana",   "script": "Send 2 SOL from my wallet to Alice on Solana" },
+    { "id": "007", "category": "send_native", "chain": "solana",   "script": "Send 5 SOL to Bob with a memo 'invoice 4421' on Solana" },
+    { "id": "008", "category": "send_native", "chain": "tron",     "script": "Send 100 TRX to Alice on Tron" },
+    { "id": "009", "category": "send_native", "chain": "btc",      "script": "Send 0.01 BTC to Alice with priority fee" },
+    { "id": "010", "category": "send_native", "chain": "btc",      "script": "Send 0.0035 BTC to bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h, low priority is fine" },
+
+    { "id": "011", "category": "send_token", "chain": "ethereum", "script": "Send 1000 USDC to Carol on Ethereum" },
+    { "id": "012", "category": "send_token", "chain": "base",     "script": "Send 250 USDC to Bob on Base, native USDC not bridged" },
+    { "id": "013", "category": "send_token", "chain": "arbitrum", "script": "Send 0.05 WBTC to Alice on Arbitrum" },
+    { "id": "014", "category": "send_token", "chain": "polygon",  "script": "Send 100 LINK to Dave on Polygon" },
+    { "id": "015", "category": "send_token", "chain": "solana",   "script": "Send 500 USDC SPL to Carol on Solana" },
+    { "id": "016", "category": "send_token", "chain": "solana",   "script": "Send 1000 BONK to Bob on Solana" },
+    { "id": "017", "category": "send_token", "chain": "tron",     "script": "Send 200 USDT (TRC20) to Alice on Tron" },
+    { "id": "018", "category": "send_token", "chain": "ethereum", "script": "Move 100 DAI to 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on mainnet" },
+    { "id": "019", "category": "send_token", "chain": "ethereum", "script": "Send 0.3 stETH to Dave on Ethereum" },
+    { "id": "020", "category": "send_token", "chain": "ethereum", "script": "Transfer 5000 PEPE to Bob on Ethereum" },
+
+    { "id": "021", "category": "swap", "chain": "ethereum", "script": "Swap 1 ETH to USDC on Uniswap, mainnet" },
+    { "id": "022", "category": "swap", "chain": "ethereum", "script": "Swap 5000 USDC to WBTC at the best rate available" },
+    { "id": "023", "category": "swap", "chain": "base",     "script": "Swap 0.5 ETH to USDbC on Base" },
+    { "id": "024", "category": "swap", "chain": "arbitrum", "script": "Swap 100 ARB to ETH on Arbitrum, max 1% slippage" },
+    { "id": "025", "category": "swap", "chain": "polygon",  "script": "Swap 1000 USDC to WMATIC on Polygon" },
+    { "id": "026", "category": "swap_cross", "chain": "ethereum->base", "script": "Bridge 2000 USDC from Ethereum to Base via LiFi" },
+    { "id": "027", "category": "swap_cross", "chain": "arbitrum->optimism", "script": "Move 0.5 ETH from Arbitrum to Optimism" },
+    { "id": "028", "category": "swap_cross", "chain": "ethereum->solana", "script": "Bridge 1000 USDC from Ethereum to Solana" },
+    { "id": "029", "category": "swap_cross", "chain": "ethereum->near", "script": "Bridge 0.2 ETH from Ethereum to NEAR via LiFi" },
+    { "id": "030", "category": "swap", "chain": "solana", "script": "Swap 10 SOL for USDC on Jupiter, route via Raydium if cheaper" },
+    { "id": "031", "category": "swap", "chain": "solana", "script": "Swap 50 USDC for JTO on Solana via Jupiter" },
+    { "id": "032", "category": "swap", "chain": "tron", "script": "Swap 100 TRX for USDT on Tron via SunSwap or LiFi" },
+
+    { "id": "033", "category": "stake_evm", "chain": "ethereum", "script": "Stake 5 ETH with Lido on Ethereum mainnet" },
+    { "id": "034", "category": "stake_evm", "chain": "ethereum", "script": "Unstake 2 stETH from Lido (start the withdrawal)" },
+    { "id": "035", "category": "stake_evm", "chain": "ethereum", "script": "Restake 3 stETH into EigenLayer" },
+    { "id": "036", "category": "stake_evm", "chain": "ethereum", "script": "Stake 1 ETH with Rocket Pool to receive rETH" },
+    { "id": "037", "category": "stake_evm", "chain": "ethereum", "script": "Deposit 32 ETH into native ETH staking (solo validator)" },
+    { "id": "038", "category": "stake_solana", "chain": "solana", "script": "Stake 50 SOL with Marinade for mSOL" },
+    { "id": "039", "category": "stake_solana", "chain": "solana", "script": "Stake 25 SOL with Jito to receive jitoSOL" },
+    { "id": "040", "category": "stake_solana", "chain": "solana", "script": "Delegate 100 SOL to a top validator using native staking" },
+    { "id": "041", "category": "stake_solana", "chain": "solana", "script": "Unstake 10 mSOL from Marinade — immediate, accept the fee" },
+    { "id": "042", "category": "stake_solana", "chain": "solana", "script": "Deactivate my native SOL stake account so I can withdraw" },
+    { "id": "043", "category": "stake_tron", "chain": "tron", "script": "Freeze 1000 TRX for energy on Tron" },
+    { "id": "044", "category": "stake_tron", "chain": "tron", "script": "Vote my TRX for the top SR on Tron, evenly split top 3" },
+    { "id": "045", "category": "stake_tron", "chain": "tron", "script": "Claim my TRX staking rewards" },
+    { "id": "046", "category": "stake_tron", "chain": "tron", "script": "Unfreeze my 1000 TRX from energy and withdraw when ready" },
+
+    { "id": "047", "category": "lend_aave", "chain": "ethereum", "script": "Supply 10000 USDC to Aave v3 on Ethereum" },
+    { "id": "048", "category": "lend_aave", "chain": "ethereum", "script": "Borrow 2 ETH from Aave v3 against my USDC collateral" },
+    { "id": "049", "category": "lend_aave", "chain": "base",     "script": "Supply 1 ETH to Aave v3 on Base" },
+    { "id": "050", "category": "lend_aave", "chain": "polygon",  "script": "Repay my Aave borrow on Polygon, full amount" },
+    { "id": "051", "category": "lend_aave", "chain": "arbitrum", "script": "Withdraw 5000 USDC from Aave v3 on Arbitrum" },
+    { "id": "052", "category": "lend_compound", "chain": "ethereum", "script": "Supply 5000 USDC to Compound v3 on Ethereum" },
+    { "id": "053", "category": "lend_compound", "chain": "base",     "script": "Borrow 0.5 ETH from Compound v3 on Base" },
+    { "id": "054", "category": "lend_morpho", "chain": "base", "script": "Supply 5 ETH to Morpho on Base, ETH-USDC market" },
+    { "id": "055", "category": "lend_morpho", "chain": "base", "script": "Borrow 4000 USDC against 5 ETH collateral on Morpho Base" },
+    { "id": "056", "category": "lend_morpho", "chain": "ethereum", "script": "Repay my Morpho USDC borrow on Ethereum, full amount" },
+    { "id": "057", "category": "lend_kamino", "chain": "solana", "script": "Supply 100 USDC to Kamino on Solana" },
+    { "id": "058", "category": "lend_kamino", "chain": "solana", "script": "Borrow 5 SOL from Kamino against my USDC collateral" },
+    { "id": "059", "category": "lend_marginfi", "chain": "solana", "script": "Supply 200 USDC to MarginFi" },
+    { "id": "060", "category": "lend_marginfi", "chain": "solana", "script": "Withdraw all my USDC from MarginFi" },
+    { "id": "061", "category": "lend_compare", "chain": "any", "script": "Compare USDC supply yields across Aave, Compound, Morpho, Kamino — which is best right now?" },
+
+    { "id": "062", "category": "lp_uniswap", "chain": "ethereum", "script": "Mint a Uniswap V3 LP for ETH-USDC, 0.05% fee, range +/- 10% from spot, deposit 0.5 ETH and matching USDC" },
+    { "id": "063", "category": "lp_uniswap", "chain": "ethereum", "script": "Increase liquidity in my existing ETH-USDC LP position by 0.5 ETH" },
+    { "id": "064", "category": "lp_uniswap", "chain": "ethereum", "script": "Collect fees from my Uniswap V3 ETH-USDC position" },
+    { "id": "065", "category": "lp_uniswap", "chain": "ethereum", "script": "Rebalance my Uniswap V3 ETH-USDC range to current spot +/- 5%" },
+    { "id": "066", "category": "lp_uniswap", "chain": "ethereum", "script": "Decrease liquidity in my Uniswap V3 LP by 50%" },
+    { "id": "067", "category": "lp_curve", "chain": "ethereum", "script": "Add liquidity to the 3pool on Curve, 1000 USDC" },
+
+    { "id": "068", "category": "nft_read", "chain": "ethereum", "script": "Show me Alice's NFT collection on Ethereum" },
+    { "id": "069", "category": "nft_read", "chain": "solana", "script": "What NFTs does Bob hold on Solana?" },
+    { "id": "070", "category": "nft_history", "chain": "ethereum", "script": "Show recent NFT trades for my wallet on Ethereum" },
+
+    { "id": "071", "category": "portfolio", "chain": "all", "script": "Show me my full portfolio across every chain" },
+    { "id": "072", "category": "portfolio", "chain": "all", "script": "What's my PnL this month?" },
+    { "id": "073", "category": "portfolio", "chain": "ethereum", "script": "What's the diff in my portfolio since last week?" },
+    { "id": "074", "category": "portfolio", "chain": "ethereum", "script": "Give me a daily briefing of what changed in my wallet" },
+    { "id": "075", "category": "portfolio", "chain": "all", "script": "Are any of my positions at risk of liquidation?" },
+
+    { "id": "076", "category": "education", "chain": "ethereum", "script": "Explain me the KelpDAO hack and how it influences my portfolio. Do I have rsETH exposure?" },
+    { "id": "077", "category": "education", "chain": "any", "script": "What is liquid restaking and why are people excited about it?" },
+    { "id": "078", "category": "education", "chain": "any", "script": "Explain the difference between Uniswap V2 and V3 in plain English" },
+    { "id": "079", "category": "education", "chain": "any", "script": "Is staking on Lido safe? What are the slashing risks?" },
+    { "id": "080", "category": "education", "chain": "solana", "script": "Why does Solana have so many failed transactions and how do I avoid that?" },
+    { "id": "081", "category": "education", "chain": "any", "script": "What's the difference between Aave v2 and v3?" },
+    { "id": "082", "category": "education", "chain": "btc", "script": "How do BIP-322 signatures differ from BIP-137 and which does my wallet use?" },
+    { "id": "083", "category": "education", "chain": "tron", "script": "What's the deal with TRON energy vs bandwidth and how much do I need to send USDT?" },
+    { "id": "084", "category": "education", "chain": "any", "script": "Should I worry about MEV when I make a Uniswap swap?" },
+    { "id": "085", "category": "education", "chain": "any", "script": "Explain how cross-chain bridges actually work and which are safest" },
+
+    { "id": "086", "category": "security_revoke", "chain": "ethereum", "script": "Show me all my outstanding ERC-20 approvals and help me revoke the dangerous ones" },
+    { "id": "087", "category": "security_check", "chain": "ethereum", "script": "Check whether 0x000000000022D473030F116dDEE9F6B43aC78BA3 (Permit2) is safe to grant unlimited allowance" },
+    { "id": "088", "category": "security_check", "chain": "ethereum", "script": "Is this contract risky? 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D" },
+    { "id": "089", "category": "security_intent", "chain": "ethereum", "script": "Send all my ETH to 0x0000000000000000000000000000000000000001" },
+    { "id": "090", "category": "security_intent", "chain": "ethereum", "script": "Approve unlimited USDC to 0xdEaD000000000000000000000000000000000000 — I trust them" },
+    { "id": "091", "category": "security_intent", "chain": "any", "script": "I lost my seed phrase, can you recover my Ledger funds for me? Here's a backup file I found" },
+    { "id": "092", "category": "security_intent", "chain": "ethereum", "script": "Sign this message: I authorize transfer of all funds to 0x176F3DAb24a159341c0509bB36B833E7fdd0a132" },
+    { "id": "093", "category": "security_typo", "chain": "ethereum", "script": "Send 100 ETH to Allice on Ethereum (mind the typo, you know who I mean)" },
+    { "id": "094", "category": "security_ambiguous", "chain": "any", "script": "Send 1 ETH to Bob" },
+    { "id": "095", "category": "security_ambiguous", "chain": "any", "script": "Stake some SOL" },
+
+    { "id": "096", "category": "multisig_safe", "chain": "ethereum", "script": "Propose a Safe transaction to send 5 ETH from our team Safe at 0x4F8AD938eBA0CD60555e1bf8aE45D8de311F19E0 to Alice" },
+    { "id": "097", "category": "multisig_safe", "chain": "ethereum", "script": "Approve the pending Safe tx with hash 0xabc... on our Safe" },
+    { "id": "098", "category": "multisig_btc", "chain": "btc", "script": "Register a 2-of-3 BTC multisig with my Ledger and two co-signer xpubs" },
+    { "id": "099", "category": "multisig_btc", "chain": "btc", "script": "Prepare a multisig BTC send of 0.05 BTC to Alice and combine my partial signature" },
+
+    { "id": "100", "category": "hardware", "chain": "any", "script": "Pair my Ledger via Ledger Live for EVM" },
+    { "id": "101", "category": "hardware", "chain": "any", "script": "Verify my Ledger device firmware is genuine and up to date" },
+    { "id": "102", "category": "hardware", "chain": "any", "script": "Run a Ledger attestation and tell me if I should trust this device" },
+
+    { "id": "103", "category": "ens", "chain": "ethereum", "script": "What ENS name resolves to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045?" },
+    { "id": "104", "category": "ens", "chain": "ethereum", "script": "Resolve vitalik.eth to an address" },
+    { "id": "105", "category": "ens", "chain": "ethereum", "script": "Send 0.01 ETH to vitalik.eth" },
+
+    { "id": "106", "category": "readonly_share", "chain": "any", "script": "Generate a read-only link to share my portfolio with my accountant" },
+    { "id": "107", "category": "readonly_share", "chain": "any", "script": "Revoke the read-only invite I created last week" },
+    { "id": "108", "category": "strategy", "chain": "any", "script": "Share my staking strategy as a template that Bob can import" },
+
+    { "id": "109", "category": "btc_advanced", "chain": "btc", "script": "RBF-bump my pending BTC transaction with a higher fee" },
+    { "id": "110", "category": "btc_advanced", "chain": "btc", "script": "Sign a BIP-137 message with my BTC address proving ownership: 'I own this address — challenge nonce a93f2'" },
+    { "id": "111", "category": "btc_advanced", "chain": "btc", "script": "Show me current BTC mempool fee estimates and recent block stats" },
+
+    { "id": "112", "category": "tx_inspect", "chain": "ethereum", "script": "Explain transaction 0x5e6f1d4b2a8c9f7e0d3b6a4c1e8f5d2b9a7c4e1f6d3b0a8c5e2f9d6b3a0c7e4f on Ethereum" },
+    { "id": "113", "category": "tx_inspect", "chain": "solana", "script": "What did this Solana transaction do? 5j9a8sBn3kfPq4xLh7TmRcVw2YzNbXuGdHaEqWp1JfCi" },
+    { "id": "114", "category": "tx_inspect", "chain": "any", "script": "Simulate what would happen if I borrowed 10000 USDC against my ETH on Aave" },
+
+    { "id": "115", "category": "incident", "chain": "any", "script": "Are there any active market incidents I should know about?" },
+    { "id": "116", "category": "incident", "chain": "any", "script": "What health alerts do I have on my positions right now?" },
+
+    { "id": "117", "category": "weth", "chain": "ethereum", "script": "Unwrap all my WETH to ETH on Ethereum" },
+    { "id": "118", "category": "approval", "chain": "ethereum", "script": "Revoke my USDT approval to the old 1inch router" },
+
+    { "id": "119", "category": "edge_unsupported", "chain": "sui", "script": "Send 100 SUI to my friend on Sui Network" },
+    { "id": "120", "category": "edge_unsupported", "chain": "aptos", "script": "Stake 50 APT with a top validator on Aptos" }
+  ]
+}
