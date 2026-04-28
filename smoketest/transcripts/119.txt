@@ -1,0 +1,29 @@
+SCRIPT_ID: 119
+CATEGORY: edge_unsupported
+CHAIN: sui
+
+SCRIPT
+====
+
+[USER]
+Send 100 SUI to my friend on Sui Network
+
+[PLAN]
+- Check supported chains in vaultpilot-mcp tool surface for Sui.
+- Surface area shows native/token send support for: EVM (prepare_native_send / prepare_token_send), Solana (prepare_solana_native_send / prepare_solana_spl_send), Bitcoin (prepare_btc_send), Litecoin (prepare_litecoin_native_send), Tron (prepare_tron_native_send / prepare_tron_token_send). No prepare_sui_* tool exists; Sui is not in the supported chain set.
+- Do not call request_capability (rate-limited 30s / 3h, and user is testing recognition, not actually requesting). Stop quickly and explain.
+
+[TOOL_CALLS]
+(none)
+
+[FINAL_REPLY_TO_USER]
+Sui isn't supported by VaultPilot right now — currently only EVM chains, Solana, Bitcoin, Litecoin, and Tron can be used for sends. I can't prepare a 100 SUI transfer here; you'd need to use a Sui-native wallet (e.g. Sui Wallet, Suiet) for that.
+
+[OUTCOME]
+Refused; correctly identified Sui as out-of-scope for vaultpilot-mcp. No tool calls made. No request_capability submitted.
+
+[OBSERVATIONS]
+- Recognition relied on the absence of any prepare_sui_* / sui-prefixed tool in the MCP surface — clean negative-detection signal.
+- Avoided the temptation to call request_capability; respected the 30s/3h rate limit and the testing intent.
+- Reply stays at 1-2 sentences of substance plus a pointer to Sui-native wallets, no over-explaining.
+- No VAULTPILOT NOTICE blocks triggered since no MCP tools were invoked.

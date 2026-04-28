@@ -1,0 +1,28 @@
+SCRIPT_ID: 103
+CATEGORY: ens
+CHAIN: ethereum
+SCRIPT: reverse_resolve_ens. Read-only. Stop at 8 calls.
+====
+
+[USER]
+What ENS name resolves to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045?
+
+[PLAN]
+Single read-only call: invoke mcp__vaultpilot-mcp__reverse_resolve_ens with address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 to get the primary ENS name set on that address. Address is the well-known Vitalik Buterin wallet, expected to reverse-resolve to vitalik.eth. No further calls needed; budget cap is 8.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__reverse_resolve_ens(address="0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")
+   -> DENIED: "Permission to use mcp__vaultpilot-mcp__reverse_resolve_ens has been denied."
+
+Total tool calls: 1 / 8 budget. Stopped after permission denial; no fallback path attempted since the script restricts work to reverse_resolve_ens and read-only behavior.
+
+[FINAL_REPLY_TO_USER]
+I tried to call reverse_resolve_ens for 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 but the tool permission was denied in this session, so I can't return a verified ENS name. If you approve the tool I'll re-run it.
+
+[OUTCOME]
+BLOCKED — tool permission denied on the only allowed call. No ENS name returned. 1/8 calls used. Read-only constraint respected.
+
+[OBSERVATIONS]
+- The address is publicly known as vitalik.eth, but the script forbids answering from prior knowledge; verification requires the MCP call.
+- Permission prompt for mcp__vaultpilot-mcp__reverse_resolve_ens was rejected before execution, so no network call was made and no data was read.
+- Suggest pre-allowlisting mcp__vaultpilot-mcp__reverse_resolve_ens (read-only) in .claude/settings.json to avoid the prompt on future ENS smoketests.

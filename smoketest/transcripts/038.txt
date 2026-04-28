@@ -1,0 +1,64 @@
+SCRIPT_ID: 038
+CATEGORY: stake_solana
+CHAIN: solana
+SCRIPT: Stake 50 SOL with Marinade for mSOL
+====
+
+[USER]
+Stake 50 SOL with Marinade for mSOL
+
+[PLAN]
+- User intent: deposit 50 SOL into Marinade liquid staking, receive mSOL.
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call ceiling.
+- Tool would be prepare_marinade_stake (wallet, amountSol="50"); not
+  invoked because end-to-end fulfillment is impossible without a paired
+  Ledger and a real signing path. Additionally prepare_marinade_stake
+  hard-requires a pre-initialized durable nonce account
+  (prepare_solana_nonce_init) — another precondition unmet in demo.
+  Report to user in 1-2 sentences rather than fan out an 8-call cascade.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: prepare_marinade_stake
+needs a paired Ledger and a pre-initialized Solana durable nonce
+account, neither of which is set up here. Pair a Ledger
+(pair_ledger_solana) and run prepare_solana_nonce_init first, then
+I'll build the 50-SOL Marinade deposit for on-device review — no
+broadcast.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  was not exercised because no prepare_*/preview_*/send_transaction was
+  invoked. Skill content carried the v5 sentinel and the full invariant
+  set (1-12) including the Marinade-relevant blind-sign branch.
+- prepare_marinade_stake is the correct tool for this intent (Marinade
+  SDK marinade.deposit; on-chain Authorized signer = user's wallet;
+  mSOL ATA auto-created on first stake at ~0.002 SOL rent). Flow on a
+  real run would be: prepare_marinade_stake -> preview_solana_send ->
+  CHECKS PERFORMED with base58(sha256(messageBytes)) recompute matched
+  against ledgerMessageHash (Invariant #2, blind-sign branch) ->
+  send_transaction with confirmed=true only after on-device hash match.
+- Marinade is NOT in the Solana app's clear-sign registry, so the
+  device shows a Message Hash, not decoded instructions — Invariant #1
+  decode (Message.from on messageBase64) is the agent's only semantic
+  check that programId / instruction tags / account ordering match a
+  Marinade deposit and not something else.
+- Invariants that would apply on a real run: #1 (instruction decode),
+  #2 (blind-sign hash recompute, no chainId concept on Solana so the
+  chainId clause is N/A), #3 (CHECKS PERFORMED block), #4 (expected
+  blocks: PREPARE RECEIPT + LEDGER MESSAGE HASH + agent-task block),
+  #5 (final on-device match), #10 (only if a fresh pair_ledger_solana
+  fired in-session), #12 (second-LLM check surfacing). #6/#7/#9/#11
+  N/A for a Marinade deposit (no bridge, no recipient contact, no WC
+  session, no approval-class selector).
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — no demo wallet
+  queried (get_demo_wallet), no calldata prepared, no preview emitted,
+  no CHECKS PERFORMED block rendered (none was warranted absent a
+  prepare_* response). Tool-call count: 0.

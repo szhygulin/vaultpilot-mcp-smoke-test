@@ -1,0 +1,92 @@
+SCRIPT_ID: 051
+CATEGORY: lend_aave
+CHAIN: arbitrum
+SCRIPT: Withdraw 5000 USDC from Aave v3 on Arbitrum
+====
+
+[USER]
+Withdraw 5000 USDC from Aave v3 on Arbitrum
+
+[PLAN]
+1. Apply vaultpilot-preflight skill (loaded — invariants armed for any signing
+   flow that materializes).
+2. Resolve the active wallet via get_demo_wallet (demo mode, no Ledger pairing).
+3. Confirm an Aave v3 USDC supply position exists on Arbitrum for that wallet
+   before attempting withdraw — withdraw against a non-existent aToken balance
+   is a guaranteed revert. Use get_lending_positions (chain=arbitrum,
+   protocol=aave-v3) and cross-check via get_token_balance for aArbUSDC /
+   aArbUSDCn (native USDC vs. bridged USDC.e on Arbitrum — Aave v3 has both
+   reserves, so disambiguation matters).
+4. Pull a portfolio_summary snapshot to surface any other relevant chain context
+   (health factor if there's a borrow leg, total supplied across reserves).
+5. Attempt prepare_aave_withdraw (chain=arbitrum, asset=USDC, amount=5000) ONLY
+   if step 3 confirms a sufficient aToken balance.
+6. If position is absent or insufficient: stop_fulfillment_impossible — do NOT
+   call prepare_aave_withdraw against a zero balance (would burn a tool call
+   on a guaranteed-revert tx and the prepare receipt would be misleading).
+7. No broadcast regardless (demo mode, no Ledger). If a prepare receipt does
+   come back, run preflight invariants #1/#2/#3 and stop at CHECKS PERFORMED.
+
+[TOOL_CALLS]
+1 | Skill(vaultpilot-preflight) | (no args) | Skill v5 loaded; Step 0 integrity-pin gate noted; Invariants #1-#12 surfaced. | Preflight rules engaged before any prepare attempt. No PIN block to verify yet (no MCP signing-flow response in scope).
+2 | ToolSearch | select:get_demo_wallet,get_lending_positions,get_token_balance,get_portfolio_summary,prepare_aave_withdraw,get_token_metadata,get_token_allowances,simulate_transaction | 8 schemas loaded. | Schemas needed since deferred MCP tools not auto-loaded; pulled the read-only diagnostics surface plus the target prepare_* tool.
+3 | mcp__vaultpilot-mcp__get_demo_wallet | {} | demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28. | Use staking-maxi EVM address as wallet (no Ledger pairing in demo).
+4 | mcp__vaultpilot-mcp__get_lending_positions | wallet=0x8EB8…ab28, chain=arbitrum, protocol=aave-v3 | positions=[] (no Aave v3 supply or borrow positions on Arbitrum for this wallet). | Confirms staking-maxi persona has no Aave v3 footprint on Arbitrum — withdraw target does not exist.
+5 | mcp__vaultpilot-mcp__get_token_balance | wallet=0x8EB8…ab28, chain=arbitrum, token=0x724dc807b04555b71ed48a6896b6F41593b8C637 (aArbUSDCn, native-USDC aToken) | balance=0. | Cross-check: zero aToken balance for native USDC reserve. No supplied position to withdraw against.
+6 | mcp__vaultpilot-mcp__get_token_balance | wallet=0x8EB8…ab28, chain=arbitrum, token=0x625E7708f30cA75bfd92586e17077590C60eb4cD (aArbUSDC, bridged USDC.e aToken) | balance=0. | Cross-check the OTHER USDC reserve (USDC.e). Also zero. Neither USDC nor USDC.e is supplied — withdraw is impossible regardless of which reserve the user meant.
+7 | mcp__vaultpilot-mcp__get_portfolio_summary | wallet=0x8EB8…ab28, chains=[arbitrum] | totalUsd ≈ small ETH gas balance + ARB; no aToken / variableDebtToken / stableDebtToken holdings. | Confirms no Aave v3 exposure on Arbitrum at all — not a stale-cache issue, the position genuinely doesn't exist.
+8 | mcp__vaultpilot-mcp__get_token_metadata | chain=arbitrum, token=0xaf88d065e77c8cC2239327C5EDb3A432268e5831 (native USDC) | symbol=USDC, decimals=6, name="USD Coin". | Sanity-check the underlying token resolves cleanly on Arbitrum so the user-facing reply is unambiguous about which USDC was checked (both reserves verified above).
+
+[FINAL_REPLY_TO_USER]
+"Can't withdraw — the demo wallet (staking-maxi, 0x8EB8…ab28) has no Aave v3 supply position on Arbitrum. I checked both USDC reserves (native USDC at 0xaf88…5831 and bridged USDC.e at 0xFF97…E6CA): aToken balances are 0 on both, and get_lending_positions returns an empty array. There's nothing to withdraw 5000 USDC against. If you meant a different wallet or a different chain (Aave v3 also runs on Ethereum, Base, Optimism, Polygon), say which and I'll re-check; or if you wanted to first SUPPLY 5000 USDC, I can prepare that instead."
+
+[OUTCOME]
+stop_fulfillment_impossible (no aToken balance on either Arbitrum USDC reserve;
+prepare_aave_withdraw NOT called — would have produced a guaranteed-revert tx
+against a zero balance; 8 read-only tool calls; preflight skill loaded but no
+signing-flow invariants triggered because no prepare_* / preview_* / signing
+call was made).
+
+[OBSERVATIONS]
+- ux: Read-only diagnostics chain (get_lending_positions → get_token_balance ×2
+  → get_portfolio_summary) gave a clean, unambiguous "no position" verdict
+  before committing a prepare_* call. The double-token-balance check
+  (aArbUSDCn + aArbUSDC) is necessary on Arbitrum specifically because Aave v3
+  lists both native USDC and bridged USDC.e as separate reserves with separate
+  aTokens — a single get_token_balance against one would have left ambiguity.
+- feature_gap: get_lending_positions returning [] is the right answer but the
+  agent still has to do reserve-by-reserve aToken balance checks to be sure
+  it's not a partial/stale view. A single "does this wallet have ANY aave-v3
+  position on chain X" boolean would simplify the impossibility branch.
+- security_notes: Preflight Step 0 (integrity self-check) was NOT triggered —
+  no PREFLIGHT SKILL INTEGRITY PIN block in scope this turn (no signing-flow
+  MCP response). Had prepare_aave_withdraw been called and returned calldata,
+  Step 0 would have fired against the pin in that response, then Invariants
+  #1 (decode aave Pool.withdraw(asset, amount, to)), #2 (keccak256 RLP
+  recompute + chainId == 42161 assertion), #3 (CHECKS PERFORMED block), #5
+  (on-device match), #9 (WC topic surface), #12 (second-LLM check offer)
+  would all have been mandatory. Invariant #11 (approval surfacing) NOT
+  applicable — Aave withdraw burns the user's aToken in-protocol, no ERC-20
+  approve / permit needed.
+- preflight_invoked: yes — skill loaded at top of turn; integrity Step 0 NOT
+  triggered (no signing-flow response, no pin block to verify); Invariants
+  #1-#12 NOT triggered (no prepare_* call reached).
+- friction_points: (1) Two-reserve disambiguation (USDC vs USDC.e on Arbitrum)
+  required two extra get_token_balance calls; a positions endpoint that
+  always enumerates per-reserve would collapse this. (2) The user's request
+  was unambiguous-sounding ("5000 USDC") but Arbitrum has two USDC reserves
+  in Aave v3 — even with a non-zero balance, the agent would have had to
+  pick one or ask. Worth surfacing this as a known disambiguation point in
+  the prepare_aave_withdraw tool description.
+- intent_vs_outcome_mismatch: User intent = withdraw 5000 USDC from Aave v3
+  Arbitrum. Outcome = no withdraw possible (no supply position exists). The
+  agent stopped before issuing prepare_aave_withdraw rather than committing
+  a guaranteed-revert tx; offered two reasonable next steps (different
+  wallet/chain, or supply instead of withdraw).
+- correctness: Skipping prepare_aave_withdraw against a zero aToken balance
+  is the right call — the prepare receipt would have surfaced a tx that
+  decodes legitimately (Pool.withdraw(USDC, 5e9, to)) and passes preflight
+  Invariants #1/#2/#3, but executes to a revert at simulate/broadcast.
+  Stopping at the diagnostics layer is faster, cheaper, and avoids
+  presenting a "looks-fine" prepare receipt for a tx that can't succeed.
+====

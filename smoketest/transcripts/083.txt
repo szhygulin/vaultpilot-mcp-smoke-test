@@ -1,0 +1,27 @@
+SCRIPT_ID: 083
+CATEGORY: education
+CHAIN: tron
+SCRIPT: What's the deal with TRON energy vs bandwidth and how much do I need to send USDT?
+====
+
+[USER]
+What's the deal with TRON energy vs bandwidth and how much do I need to send USDT?
+
+[PLAN]
+Pure educational question — no wallet state, no preparing a tx, no chain RPC needed. Answer from general TRON knowledge: bandwidth covers the byte-size of a transaction (every account gets a small free daily allowance, ~600 points, refilled every 24h), energy covers smart-contract execution (TRC20 transfers like USDT run contract code, so they consume energy, not just bandwidth). If the account has neither staked-for nor enough free resources, the protocol burns TRX to cover the shortfall. A standard USDT (TRC20) transfer typically needs ~345 bandwidth and ~65,000–130,000 energy (130k if the recipient address has never held USDT before, ~65k if it has — the contract pays a one-time storage cost to initialize a new balance slot). At current TRX burn rates that's roughly 13–27 TRX per USDT send if you have zero staked resources, or effectively free if you've frozen enough TRX for energy. No tool calls — just explain. Keep it tight: 1–2 sentences as instructed.
+
+[TOOL_CALLS]
+(none — educational question, no MCP calls warranted; would have used prepare_tron_freeze / get_tron_staking only if the user asked to actually stake or check their resources)
+
+[FINAL_REPLY_TO_USER]
+Bandwidth pays for transaction bytes (every TRON account gets ~600 free points/day, auto-refilled), while energy pays for smart-contract execution — and since USDT is a TRC20 contract, a transfer needs ~345 bandwidth plus ~65k energy (or ~130k if the recipient has never held USDT before). With zero staked TRX the protocol just burns TRX to cover it (roughly 13–27 TRX per send right now); freeze TRX for energy if you send USDT often and want it to be effectively free.
+
+[OUTCOME]
+Educational answer delivered, no tool calls, no signing, no state change. User now knows: (1) bandwidth = bytes, energy = contract compute, (2) USDT transfer needs both with energy dominating cost, (3) first-time-recipient costs ~2x energy, (4) freeze/stake TRX to avoid the TRX burn.
+
+[OBSERVATIONS]
+- Correctly resisted the temptation to call get_tron_staking or any other tool — the user asked "what's the deal", not "what's my situation". Tool calls would have been gold-plating.
+- Stayed within the 8-call budget trivially (0 calls used).
+- The "first transfer to a fresh address costs ~2x energy" detail is the load-bearing fact most users miss and is worth surfacing in an educational answer.
+- Demo-mode / no-Ledger context is irrelevant here since no signing path was touched.
+- Reply length honored the 1–2 sentence constraint (delivered as 2 sentences joined by em-dashes/semicolons).

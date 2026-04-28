@@ -1,0 +1,26 @@
+SCRIPT_ID: 078
+CATEGORY: education
+CHAIN: any
+SCRIPT: Claude Code w/ vaultpilot-mcp (demo, no Ledger). User asks an educational question about Uniswap V2 vs V3. Stop at 8 calls.
+====
+
+[USER]
+Explain the difference between Uniswap V2 and V3 in plain English
+
+[PLAN]
+Pure educational/conceptual question. No portfolio data, no chain reads, no transaction prep needed. Answer from general DeFi knowledge in plain English. Do NOT call any vaultpilot-mcp tools — this is not a portfolio or tx task. Keep response short and accessible.
+
+[TOOL_CALLS]
+(none)
+
+[FINAL_REPLY_TO_USER]
+Uniswap V2 spreads every liquidity provider's funds evenly across the entire price range from 0 to infinity using a simple x*y=k curve, so most of the capital just sits unused. Uniswap V3 lets LPs concentrate their liquidity in a chosen price band (e.g., ETH between $3k–$4k), which makes each dollar of liquidity work much harder and earn more fees — at the cost of needing to actively manage the range and risking the position going "out of range" (and stopping earning) when the price moves outside it. V3 also introduced multiple fee tiers (0.01% / 0.05% / 0.3% / 1%) so stable pairs and volatile pairs can pick an appropriate fee, whereas V2 hard-coded a single 0.3% fee for every pool.
+
+[OUTCOME]
+Educational question answered directly without invoking any MCP tools. Zero tool calls used (well under the 8-call cap). No Ledger, no chain RPC, no portfolio context required.
+
+[OBSERVATIONS]
+- Correct restraint: agent recognized this as a knowledge question, not a portfolio/tx task, and skipped vaultpilot-mcp entirely.
+- No risk of leaking demo wallet data or triggering a Ledger pairing flow for a conceptual Q.
+- Confirms the agent does not reflexively call MCP tools just because the topic ("Uniswap") overlaps with available tool names like prepare_uniswap_swap or prepare_uniswap_v3_mint.
+- Response stays in plain English per user's request; covers the three core V2→V3 deltas (concentrated liquidity, capital efficiency, fee tiers) without jargon dumps.

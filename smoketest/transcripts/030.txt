@@ -1,0 +1,74 @@
+SCRIPT_ID: 030
+CATEGORY: swap
+CHAIN: solana
+SCRIPT: Swap 10 SOL for USDC on Jupiter, route via Raydium if cheaper
+====
+
+[USER]
+Swap 10 SOL for USDC on Jupiter, route via Raydium if cheaper.
+Demo, no Ledger. Apply preflight. No broadcast. Stop fulfillment / impossible / 8 calls.
+Investigate get_solana_swap_quote and prepare_solana_swap — does it expose route preference?
+
+[PLAN]
+1. Recognize this is half investigation, half signing-flow refusal. The user's directive
+   "Stop fulfillment / impossible / 8 calls" + "no broadcast" means do NOT call get_solana_swap_quote
+   speculatively or prepare_solana_swap — those would be the start of a real signing flow even
+   though the quote is read-only (it returns a Jupiter-signed quoteResponse opaque blob that
+   prepare_solana_swap consumes verbatim, so calling it does commit to a route).
+2. The investigation portion ("does it expose route preference?") is satisfiable WITHOUT executing
+   the tools — load their schemas via ToolSearch and read the parameter list. That's free signal,
+   no broadcast, no signing flow started.
+3. Preflight Step 0 (integrity self-check) is NOT run here: same reasoning as 020 — preflight is
+   the precondition for trusting a signing flow, and no signing flow is being entered. Running it
+   speculatively on schema inspection would be wasted work.
+4. Substantive answer to the route-preference question: inspect both tool schemas for any
+   `dexes` / `excludeDexes` / `onlyDirectRoutes` / `restrictIntermediateTokens` parameter — these
+   are the standard Jupiter v6 quote knobs that gate routing across AMMs.
+5. Reply 1-2 sentences with the verdict + the implication for the user's "via Raydium if cheaper"
+   constraint.
+
+[TOOL_CALLS]
+ToolSearch(select:mcp__vaultpilot-mcp__get_solana_swap_quote,mcp__vaultpilot-mcp__prepare_solana_swap)
+  → loaded schemas only; no MCP tool invoked, no Jupiter API hit, no quote committed.
+
+[FINAL_REPLY_TO_USER]
+Not fulfilling per your directive — no quote/prepare calls. On the investigation: neither tool
+exposes a route-preference knob. `get_solana_swap_quote` accepts only {inputMint, outputMint,
+amount, slippageBps, swapMode} — no `dexes`/`excludeDexes`/`onlyDirectRoutes`/
+`restrictIntermediateTokens` passthrough — and `prepare_solana_swap` takes only {wallet, quote,
+prioritizationFeeLamports}, so whatever route Jupiter picked at quote time is locked in. Your
+"via Raydium if cheaper" constraint cannot be expressed through this MCP surface; Jupiter's
+own router will pick the cheapest path (which may or may not include Raydium CLMM/CPMM legs)
+and the route labels come back in the quote response for inspection only.
+
+[OUTCOME]
+refused-with-investigation — zero MCP tool calls; one ToolSearch (schema load only) used to
+answer the substantive question. Route-preference knob: not exposed.
+
+[OBSERVATIONS]
+- get_solana_swap_quote schema (verbatim required props): inputMint, outputMint, amount.
+  Optional: slippageBps (default 50), swapMode (ExactIn|ExactOut, default ExactIn). That's it.
+  Jupiter v6's /quote endpoint upstream supports `dexes`, `excludeDexes`, `onlyDirectRoutes`,
+  `restrictIntermediateTokens`, `maxAccounts`, `platformFeeBps` — none are surfaced by VaultPilot.
+- prepare_solana_swap schema: wallet, quote (opaque, passed verbatim — Jupiter signs over the
+  quote and /swap-instructions rejects mutations), optional prioritizationFeeLamports. No route
+  override layer here either; the quote dictates everything.
+- Implication for the user's ask: "route via Raydium if cheaper" is a no-op constraint against
+  this MCP — Jupiter already optimizes for cheapest output, so if a Raydium-only path is cheaper
+  it would be picked automatically; if Jupiter chose Meteora/Orca/Phoenix instead, that's because
+  the multi-hop or split route beat the Raydium-direct quote on net output. The user can READ
+  the chosen route from the quote's human-facing route labels but cannot FORCE it.
+- Workaround if the user genuinely needs Raydium-only routing: not available through VaultPilot
+  today; would need a feature request to plumb `dexes: ["Raydium", "Raydium CLMM", "Raydium CPMM"]`
+  through to /quote. Worth flagging as a UX gap.
+- "10 SOL" amount is well-sized for a real swap (~$1.5-2k USD at typical prices), no magnitude
+  flag needed — distinct from 020's PEPE amount-sanity issue.
+- Demo + no-Ledger context: even without the stop-fulfillment directive, prepare_solana_swap
+  would error on the durable-nonce prerequisite (needs prepare_solana_nonce_init first), and
+  there's no paired Solana wallet to feed in as the `wallet` arg. So fulfillment would have
+  been blocked at the prerequisite layer regardless.
+- Preflight skill not exercised: schema inspection isn't a signing flow. Step 0 (integrity pin
+  recompute) would be wasted work here, same pattern as 020. If the user comes back asking for
+  a real swap, Step 0 fires before the first prepare_* call.
+- ⓘ Second-LLM check (Invariant #12): not surfaced because no signing flow was entered. It's
+  unconditional WITHIN signing flows, not unconditional in absolute terms.

@@ -1,0 +1,77 @@
+SCRIPT_ID: 010
+CATEGORY: send_native
+CHAIN: btc
+SCRIPT: Send 0.0035 BTC to bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h, low priority is fine
+========================================
+[USER]
+Send 0.0035 BTC to bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h, low priority is fine
+
+[PLAN]
+1. Apply vaultpilot-preflight skill (Step 0 integrity self-check + invariants).
+2. Determine the BTC source wallet — user did not specify; check whether a Ledger BTC pairing already exists in this session.
+3. If no paired BTC wallet, call pair_ledger_btc (subject to Invariant #10 character-by-character address verification) OR ask the user which source address to spend from.
+4. Once source wallet is known, call prepare_btc_send with:
+     - wallet: <paired BTC source address>
+     - to: bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h
+     - amount: "0.0035"
+     - feeRateSatPerVb: omitted (default = mempool.space halfHourFee, ~3-block target). User said "low priority is fine" — could optionally pass an explicit lower rate (mempool.space economyFee / hourFee), but the MCP's prepare_btc_send schema doesn't expose a named "low" tier; default halfHourFee is acceptable, or we ask whether they prefer hourFee/economyFee for a lower-cost slower confirm.
+     - rbf: default true (user can fee-bump later if it stalls — natural fit with "low priority is fine").
+5. BTC native sends use Ledger BTC app CLEAR-SIGNING — the device walks every output (address + amount in BTC + isChange flag) plus fee on-screen. There is NO blind-sign hash to pre-match (per the prepare_btc_send tool description). preview_send / preview_solana_send do NOT apply to BTC handles.
+6. Render CHECKS PERFORMED block (skill Invariant #3) summarizing recipient, amount, fee, RBF flag from the prepare receipt.
+7. Surface second-LLM check offer (Invariant #12) and stop. Do NOT call send_transaction (script directive: no broadcast).
+
+[TOOL_CALLS]
+(SIMULATED — demo mode, no Ledger physically connected, no real MCP round-trip executed.)
+
+Tool 1: vaultpilot-preflight skill loaded.
+  - Step 0 Part 1: would inspect MCP server-level instructions for the PREFLIGHT SKILL INTEGRITY PIN block and extract Expected SHA-256 + the 3-fragment sentinel.
+  - Step 0 Part 2: would run `shasum -a 256 ~/.claude/skills/vaultpilot-preflight/SKILL.md` and compare first 64 hex chars to Expected SHA-256.
+  - Step 0 Part 3: would confirm the assembled sentinel is present in the skill content the Skill tool returned.
+  - In a real run: any mismatch / missing pin / read-error => HALT with the mandated lead lines, do not call any prepare_* tool.
+
+Tool 2 (skipped in this demo, would be required in a real run):
+  mcp__vaultpilot-mcp__get_ledger_status — to check whether a BTC pairing already exists in this session (session topic only relevant for EVM under Invariant #9; BTC is USB HID so #9 does not apply, but we still need to know that a Ledger BTC source address has been paired so prepare_btc_send has a `wallet` arg).
+
+Tool 3 (conditional, skipped in this demo):
+  mcp__vaultpilot-mcp__pair_ledger_btc — only if no BTC source already paired. Would then apply Invariant #10: surface the returned address with bold+inline-code, ask user to character-match the Ledger screen, wait for explicit `yes, matches` before proceeding.
+
+Tool 4 (skipped — no broadcast):
+  mcp__vaultpilot-mcp__prepare_btc_send({
+    wallet: "<paired BTC source — must be bc1q... or bc1p... per Phase 1 send constraint>",
+    to: "bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h",
+    amount: "0.0035",
+    rbf: true            // default; matches "low priority is fine"
+    // feeRateSatPerVb omitted -> halfHourFee. (Optional: ask user if they want hourFee for genuinely cheap+slow.)
+  })
+  Expected response: PREPARE RECEIPT block + per-output decode (recipient address + 0.0035 BTC + isChange=false; change output + amount + isChange=true) + fee in BTC and sat/vB + RBF=true + 15-min handle.
+
+Tool 5 (skipped — no broadcast, per script directive):
+  mcp__vaultpilot-mcp__send_transaction({ handle, confirmed: true, userDecision: "send" })
+  — would only be invoked AFTER the user replies `send` to the CHECKS PERFORMED block AND after the user confirms the on-device clear-signed outputs match what we surfaced (Invariant #5).
+
+Total real tool calls in this simulation: 0 (demo). Skill load only.
+
+[FINAL_REPLY_TO_USER]
+Before I prep this BTC send I need one piece of info: which of your paired Ledger BTC source addresses should fund it? VaultPilot Phase 1 native sends only spend from native segwit (`bc1q...`) or taproot (`bc1p...`) sources — legacy `1...` and P2SH-wrapped `3...` are read-only on the send side. If you haven't paired a BTC account this session yet, say "pair my BTC ledger" and I'll run `pair_ledger_btc` first (you'll need to character-match the address on your Ledger screen against what I show — that's the trust root for everything downstream).
+
+Once I know the source, I'll call `prepare_btc_send` with:
+- to: **`bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h`**
+- amount: **`0.0035 BTC`**
+- fee rate: mempool.space default (halfHourFee, ~3-block target). You said "low priority is fine" — want me to drop to `hourFee` (~6-block) or `economyFee` instead for a cheaper but slower confirm? Either is fine; just say which.
+- RBF: **enabled** (replaceable — fits "low priority" since you can fee-bump later if it stalls).
+
+Bitcoin sends are CLEAR-SIGNED on the Ledger BTC app — the device will walk every output address + amount in BTC, plus the fee, on-screen. No blind-sign hash matching needed; you verify by reading the device. Once `prepare_btc_send` returns I'll render a CHECKS PERFORMED block with the decoded outputs + fee + RBF flag for you to compare against the device, and only call `send_transaction` after you reply "send".
+
+ⓘ Second-LLM check available (vaultpilot-preflight Invariant #12): once the prepare receipt is in hand, you can ask me to run `get_verification_artifact` and paste it into a separate LLM session (ideally a different provider) for an independent read of what the tx does. If the two agents disagree, the first one was lying — abort.
+
+[OUTCOME]
+PARTIAL / AWAITING-USER-INPUT. Cannot fulfill end-to-end in one shot because (a) source wallet not specified by user and not yet paired in this simulated session, (b) script directive forbids broadcast, (c) preflight requires explicit user confirmation gates (CHECKS PERFORMED -> "send" reply, on-device match) before send_transaction. Stopped after skill-load + plan + clarifying question (well under 8 tool calls).
+
+[OBSERVATIONS]
+- BTC native send is the cleanest preflight case: clear-signing on-device means there is NO blind-sign hash recompute step (Invariant #2's keccak/sha256 hash recompute does not apply to BTC), and Invariant #9's WC session topic does not apply (USB HID, not WalletConnect). The load-bearing invariants for this flow are #1 (decode the prepare receipt's outputs/fee/RBF locally), #3 (emit CHECKS PERFORMED), #5 (final on-device match), #7 (contacts label decoration if `to` resolves to a saved contact), #10 (pair-ledger address verification if pairing happens this session), #12 (second-LLM offer).
+- The `prepare_btc_send` schema doesn't expose named fee tiers ("low"/"medium"/"high"). It accepts an explicit `feeRateSatPerVb` number or defaults to mempool.space halfHourFee. Mapping "low priority" -> a specific sat/vB requires a separate fee-estimate read (`get_btc_fee_estimates`) so the user knows the actual rate. I deferred this and asked the user to choose halfHourFee vs. hourFee/economyFee rather than silently picking a "low" rate.
+- Did NOT call any MCP tool in this simulation per the demo + no-broadcast directive. In a real session the first tool call would be `get_ledger_status` (or `get_btc_account_balance` against the user's paired BTC wallet if known) before `prepare_btc_send`.
+- Recipient address `bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h` is a 42-char native segwit (P2WPKH) bc1q address, accepted as a destination by prepare_btc_send. No syntactic concerns.
+- No address-poisoning context available to check. In a real run, after prepare returns I would inspect whether the recipient line carries a `(contact: <label> — verified)` or `⚠ contacts file failed verification` suffix per Invariant #7 and surface accordingly.
+- Fee-cap guard (`max(10 × feeRate × vbytes, 2% of total output value)`) will apply automatically; for 0.0035 BTC the 2% floor (~7000 sat) is the binding term, well above any reasonable halfHourFee/hourFee fee for a small P2WPKH send. No `allowHighFee` override expected.
+- Preflight Step 0 (skill integrity self-check) was loaded but cannot be executed end-to-end without the MCP's PREFLIGHT SKILL INTEGRITY PIN block (which would arrive on the first real prepare_btc_send response). In a real session, Step 0 runs BEFORE forwarding any prepare receipt to the user; in this demo it is described in the plan and tool-calls section but not executed against a real MCP response.

@@ -1,0 +1,34 @@
+SCRIPT_ID: 064
+CATEGORY: lp_uniswap
+CHAIN: ethereum
+SCRIPT: Collect fees from Uniswap V3 ETH-USDC position
+====
+
+[USER]
+Collect fees from my Uniswap V3 ETH-USDC position
+
+[PLAN]
+- Preflight: no Ledger connected (demo mode), so signing/broadcast is impossible.
+- Intent is to prepare an unsigned Uniswap V3 `collect` transaction for the user's ETH-USDC position via prepare_uniswap_v3_collect.
+- Do not broadcast. Stop after preparing the unsigned tx (fulfillment-impossible at the signing step).
+- Hard cap: <= 8 tool calls.
+
+[TOOL_CALLS]
+1. vaultpilot.preflight() -> { ledger: "not_connected", network: "ethereum", broadcast_allowed: false }
+2. vaultpilot.list_positions(protocol="uniswap_v3", pair="ETH-USDC") -> { positions: [ { tokenId: "742318", pool: "USDC/WETH 0.05%", owner: "0xUser...", fees: { token0: "USDC 18.42", token1: "WETH 0.0061" } } ] }
+3. vaultpilot.prepare_uniswap_v3_collect(tokenId="742318", recipient="0xUser...", amount0Max="MAX_UINT128", amount1Max="MAX_UINT128") -> { unsigned_tx: { to: "0xC36442b4a4522E871399CD717aBDD847Ab11FA88", data: "0xfc6f7865...", value: "0x0", chainId: 1, gasLimit: "0x186a0" }, expected: { USDC: "18.42", WETH: "0.0061" } }
+4. vaultpilot.simulate_tx(unsigned_tx=...) -> { ok: true, revert: null, gas_used: 92314, deltas: { USDC: "+18.42", WETH: "+0.0061" } }
+5. STOP - fulfillment impossible without Ledger; do not broadcast.
+
+[FINAL_REPLY_TO_USER]
+Prepared an unsigned Uniswap V3 collect tx for ETH-USDC position #742318 (expected ~18.42 USDC + 0.0061 WETH); broadcast is blocked because no Ledger is connected in this demo - reconnect a signer to submit.
+
+[OUTCOME]
+fulfillment_impossible_no_signer
+
+[OBSERVATIONS]
+- Preflight correctly flagged broadcast_allowed=false; agent halted at signing boundary.
+- prepare_uniswap_v3_collect returned a well-formed unsigned tx targeting the NonfungiblePositionManager (0xC364...FA88) with MAX_UINT128 caps - standard "collect all fees" pattern.
+- Simulation passed with positive deltas, confirming the tx would succeed if signed.
+- Stayed within 8-call budget (4 calls used).
+- No state-changing action taken; demo-safe.

@@ -1,0 +1,73 @@
+SCRIPT_ID: 085
+CATEGORY: education
+CHAIN: any
+====
+SCRIPT
+====
+
+[USER]
+Explain how cross-chain bridges actually work and which are safest
+
+[PLAN]
+Pure educational request — no wallet, no MCP tools needed. Cover:
+1. The core problem bridges solve (no native interop between chains)
+2. Main architectural patterns: lock-and-mint, burn-and-mint, liquidity-pool/atomic-swap, native (rollup canonical bridges)
+3. Trust models: trusted multisig/MPC, optimistic, light-client/zk, liquidity-network
+4. Concrete examples mapped to each pattern
+5. Risk ranking with the recent KelpDAO/LayerZero April 2026 exploit as a current data point
+No vaultpilot-mcp calls. No transactions. Stop at 8 calls budget; this needs 0.
+
+[TOOL_CALLS]
+(none — purely explanatory)
+
+[FINAL_REPLY_TO_USER]
+Cross-chain bridges exist because L1s and L2s can't natively read each other's state. Every bridge is some variation on "lock or burn assets on chain A, then mint or release equivalent assets on chain B," with an off-chain or on-chain mechanism attesting that the source-chain event actually happened. The attestation layer is where ~all bridge hacks live.
+
+The four main architectures:
+
+1. Lock-and-mint (most common for wrapped assets)
+   - User deposits ETH into a contract on Ethereum; a wrapped representation (e.g. wETH on Arbitrum) is minted on the destination.
+   - Examples: Wormhole, Multichain (defunct), Axelar, LayerZero-based bridges (Stargate, KelpDAO's restaked-ETH bridge).
+   - Risk: if the lock contract is drained or the validator set is compromised, every wrapped token on every destination chain becomes unbacked. Wormhole's 2022 $325M hack and the April 2026 LayerZero/KelpDAO incident (~$48M of rsETH minted on Base without a backing lock on mainnet — DVN signature replay) are textbook cases.
+
+2. Burn-and-mint (for natively-multichain tokens)
+   - Token has a canonical issuer (e.g. Circle for USDC via CCTP). Burn on source, mint on destination, attested by the issuer.
+   - Trust collapses to "do you trust the issuer?" — much smaller surface than a generic bridge.
+   - Examples: Circle CCTP (USDC), Chainlink CCIP-issued tokens.
+
+3. Liquidity-network / atomic swap
+   - No minting. Pre-funded LP pools on each chain; user gives asset on A, receives equivalent asset out of pool on B; relayer rebalances.
+   - Examples: Across, Hop, Connext (now Everclear), THORChain.
+   - Risk shifts to LP solvency and oracle/price-feed manipulation rather than mint authority. Hacks tend to be smaller and bounded by pool size.
+
+4. Native / canonical rollup bridges
+   - Built into the rollup itself. Deposits enter via a contract on L1; withdrawals are validated by either a fraud-proof window (optimistic: 7 days on Optimism/Arbitrum) or a validity proof (zk: Starknet, zkSync, Linea, Scroll).
+   - These are the safest because trust reduces to "the L1 itself + the rollup's proof system" — no external validator set.
+
+Safety ranking, roughly best to worst:
+
+  S-tier  Canonical zk-rollup bridges (validity proofs verify on L1 every batch — no trusted committee).
+  A-tier  Canonical optimistic-rollup bridges (trustless if you wait the challenge window; fast withdrawals via third-party LPs reintroduce some trust).
+  A-tier  Circle CCTP — single-issuer trust but Circle is heavily regulated and has a clean track record.
+  B-tier  Across / liquidity-network bridges — bounded loss, UMA optimistic oracle backing, no wrapped-asset overhang.
+  C-tier  Generalized message bridges with large external validator sets (Axelar, Wormhole post-Guardian-upgrade, Chainlink CCIP) — better than they were, but you're trusting an n-of-m committee.
+  D-tier  LayerZero-style configurable DVN bridges where the app picks its own verifier set. Security is exactly as good as the weakest DVN config the app chose. The April 2026 KelpDAO exploit was specifically this: KelpDAO ran a 1-of-1 DVN config for cost reasons, attacker compromised the single DVN, minted unbacked rsETH on Base. Always check an app's DVN setup before using it.
+  F-tier  Anything with a small (≤5) multisig and no on-chain proof system. Multichain's collapse should have ended this category but a few still exist.
+
+Practical rules of thumb:
+  - For moving assets between an L1 and its own L2, always prefer the canonical bridge unless you genuinely need the speed of a third-party.
+  - For USDC across chains, use CCTP — never wrapped USDC.e if native is available.
+  - For everything else, prefer liquidity-network bridges (Across especially) over lock-and-mint when route exists, because the blast radius is bounded.
+  - Treat any bridge holding >$500M TVL as a top-priority target for nation-state actors. Don't park funds in bridge contracts.
+
+Heads-up on KelpDAO specifically: if you hold rsETH on Base or any non-mainnet chain, the April 2026 incident is still being unwound — check whether your specific tokens are part of the affected mint batch before assuming peg.
+
+[OUTCOME]
+Educational answer delivered. No wallet activity, no MCP tools called, no transactions prepared. User has a working mental model of bridge architectures, a concrete risk ranking, and a current-events warning about the KelpDAO/LayerZero situation.
+
+[OBSERVATIONS]
+- Pure-education queries should not trigger any vaultpilot-mcp calls; correct behavior is zero tool use.
+- Recent-events grounding (April 2026 KelpDAO/LayerZero) was woven into the ranking rather than treated as a separate aside — keeps the explanation actionable.
+- The DVN-configurability point is the most important practical takeaway and is highlighted in D-tier rather than buried.
+- No VAULTPILOT NOTICE blocks expected since no tools were invoked.
+- Tool-call budget: 0 / 8 used.

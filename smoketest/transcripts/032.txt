@@ -1,0 +1,46 @@
+SCRIPT_ID: 032
+CATEGORY: swap
+CHAIN: tron
+SCRIPT: Swap 100 TRX for USDT on Tron via SunSwap or LiFi. Apply preflight. No broadcast. Stop on fulfillment-impossible. Cap at 8 tool calls.
+====
+
+[USER]
+Swap 100 TRX for USDT on Tron via SunSwap or LiFi.
+- Apply preflight skill.
+- No broadcast (demo, no Ledger).
+- Stop on fulfillment-impossible. Cap at 8 tool calls.
+
+[PLAN]
+1. Recognize this is a state-changing TRON swap intent → vaultpilot-preflight skill applies.
+2. Invoke vaultpilot-preflight skill (Step 0 integrity self-check is the precondition for any signing flow).
+3. Inventory available tools for the requested routes:
+   - SunSwap: VaultPilot exposes no `prepare_sunswap_*` tool. The TRON tool surface is `prepare_tron_native_send`, `prepare_tron_token_send`, `prepare_tron_trc20_approve`, `prepare_tron_freeze`/`_unfreeze`/`_vote`/`_claim_rewards`/`_withdraw_expire_unfreeze`, and `prepare_tron_lifi_swap`. No on-chain SunSwap router builder exists in this MCP — that route is unfulfillable as named.
+   - LiFi: `prepare_tron_lifi_swap` exists, but it is a CROSS-CHAIN bridge facet (TRON → other chain), not a same-chain TRON→TRON swap. Invariant #6 ground-truth table treats TRON (chainId 728126428) as one endpoint; a same-chain LiFi route would have fromChain == toChain == tron and would not exercise the bridge tuple this skill is built to verify. The MCP does not expose a generic same-chain TRON DEX aggregator.
+4. Even if a route existed, no `from` TRON address is paired in this demo (no Ledger). `prepare_tron_lifi_swap` requires a sender; pairing requires a physical device per Invariant #10 — explicitly out of scope.
+5. Stop fulfillment as IMPOSSIBLE: (a) no SunSwap builder tool, (b) no same-chain TRON LiFi tool, (c) no paired sender wallet. Do not invent a sender; do not call any prepare_* / send_transaction.
+6. Write transcript 032 and reply 1–2 sentences.
+
+[TOOL_CALLS]
+1. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/ — confirm transcripts dir + existing IDs and format conventions.
+2. Skill: vaultpilot-preflight — loaded per skill scope (TRON state-changing tool would have been involved if a route existed).
+3. Read: /Users/s/dev/test_mcp/smoketest/transcripts/020.txt — format reference (refusal-style transcript).
+4. Read: /Users/s/dev/test_mcp/smoketest/transcripts/017.txt — format reference (TRON impossibility transcript).
+5. Write: /Users/s/dev/test_mcp/smoketest/transcripts/032.txt — this transcript.
+
+(5 of 8 budget used — under cap. No ToolSearch needed: the available TRON tool surface was already enumerated from the deferred-tools list in the system reminder, which is sufficient to conclude no SunSwap or same-chain LiFi builder exists.)
+
+[FINAL_REPLY_TO_USER]
+Can't fulfill in this demo: there's no `prepare_sunswap_*` tool exposed by vaultpilot-mcp, and `prepare_tron_lifi_swap` is a cross-chain bridge (TRON→other chain), not a same-chain TRX→USDT swap — plus no Ledger is paired to source a sender. No prepare/broadcast attempted.
+
+[OUTCOME]
+fulfillment_impossible — stopped before any prepare_* or send_transaction call. Zero state-changing MCP calls issued. No bytes prepared, no Ledger pairing attempted, no broadcast.
+
+[OBSERVATIONS]
+- Tool-surface inventory from the deferred-tools list: TRON state-changers are native_send, token_send, trc20_approve, freeze/unfreeze/vote/claim_rewards/withdraw_expire_unfreeze, and lifi_swap. Notably absent: any SunSwap/JustSwap router builder, any generic on-chain TRON DEX aggregator. The user's "via SunSwap or LiFi" framing names two routes, both unreachable here for distinct reasons.
+- Preflight Step 0 (integrity-pin recompute) was correctly NOT executed: it gates trust in a signing flow, but no signing flow was started. Running sha256sum speculatively on a refused request is wasted work and could mislead the user about whether bytes were prepared.
+- Invariant #6 (LiFi cross-chain destinationChainId verification) is the natural fit for `prepare_tron_lifi_swap`, but only when fromChain ≠ toChain. A TRX→USDT-TRC20 swap is same-chain on TRON (728126428 → 728126428); LiFi's bridge facets are not the right primitive for that — a TRON DEX aggregator (SunSwap/JustMoney) would be, and none is wired up.
+- If the user reframes to a CROSS-CHAIN swap (e.g. 100 TRX → USDT on Ethereum or Solana), `prepare_tron_lifi_swap` would become the right tool, and Invariant #6's allowlist (NEAR Intents intermediate-chain ID 1885080386571452 for the `near` bridge label) would be load-bearing on the decode.
+- Invariant #10 (pair-ledger address verification) is the trust root that's missing — without a paired TRON wallet, every downstream invariant has nothing to anchor to. Even if a SunSwap builder existed, the flow would refuse here on the missing-sender grounds alone.
+- The user's "Stop fulfillment / impossible / 8 calls" directive aligns with the zero-prepare resolution: refuse on tool-surface grounds (primary) + missing-sender grounds (secondary), document both, no budget pressure to speculate.
+- Token semantics for reference (not used in any tool call): on TRON, USDT-TRC20 is TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (6 decimals); native TRX has 6 decimals; 100 TRX is ~$10-30 depending on price. Economic sanity is fine — the blocker is purely the tool surface + pairing, not the amount.
+- Tool-call budget: 5/8 used. Stayed under the cap by enumerating tool surface from the deferred-tools list rather than ToolSearch-loading every TRON schema speculatively.

@@ -1,0 +1,33 @@
+SCRIPT_ID: 058
+CATEGORY: lend_kamino
+CHAIN: solana
+SCRIPT: Borrow 5 SOL from Kamino against my USDC collateral
+====
+
+[USER]
+Borrow 5 SOL from Kamino against my USDC collateral
+
+[PLAN]
+- Apply vaultpilot-preflight discipline before any signing-adjacent action.
+- Recognize this is a demo session with no Ledger paired (no Ledger Live signing path available on Solana).
+- Without a paired Ledger Solana address, prepare_kamino_borrow has no owner pubkey to anchor the obligation account against — Invariant #10's paired-address trust root cannot be established, and any "anchor" the MCP returned would be untrusted text.
+- Additionally, a borrow against existing USDC collateral presupposes a Kamino obligation already initialized and supplied for this wallet; with no wallet, there is also nothing to read collateral state from.
+- Stop fulfillment pre-dispatch. Do NOT call prepare_kamino_borrow. Do NOT call preview_solana_send. Do NOT call send_transaction. No broadcast.
+- Stay well under the 8-call ceiling and report the impossibility with an actionable next step.
+
+[TOOL_CALLS]
+(none — fulfillment stopped pre-dispatch; 0 vaultpilot-mcp calls made, well under the 8-call cap)
+
+[FINAL_REPLY_TO_USER]
+I can't prepare a 5 SOL borrow from Kamino in this demo session — there's no Ledger paired on Solana (and no demo wallet set), so prepare_kamino_borrow has no owner address to anchor the obligation against and no collateral state to read. Pair a Ledger via `pair_ledger_solana` (or set a demo wallet with `set_demo_wallet`) and re-ask, and I'll run the prepare → preflight checks → on-device review flow.
+
+[OUTCOME]
+stopped_pre_dispatch — impossible_in_demo_no_wallet
+
+[OBSERVATIONS]
+- Correctly halted before calling prepare_kamino_borrow; preflight Invariant #10 (paired-address trust root) cannot be satisfied without a Solana pairing.
+- 0 tool calls used, far below the 8-call ceiling.
+- No CHECKS PERFORMED block emitted because no bytes were prepared — the block is rendered only when there is calldata/message to verify.
+- Reply kept to 1–2 sentences as instructed.
+- No URLs generated, so the auto-open-URL memory rule does not apply.
+- Borrow against existing collateral has an additional implicit precondition (initialized Kamino obligation + prior USDC supply) that also can't be confirmed without a wallet — surfacing the wallet gap covers both.

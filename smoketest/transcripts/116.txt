@@ -1,0 +1,35 @@
+SCRIPT_ID: 116
+CATEGORY: incident
+CHAIN: any
+SCRIPT: Claude Code w/ vaultpilot-mcp (demo, no Ledger). User asks about health alerts on positions. Read-only. get_health_alerts. Stop at 8 calls.
+====
+
+[USER]
+What health alerts do I have on my positions right now?
+
+[PLAN]
+- Identify the active demo wallet via get_demo_wallet (need a wallet param for get_health_alerts).
+- Call get_health_alerts on the active EVM persona address with default threshold (1.5).
+- Report any Aave V3 positions below the health-factor threshold; if none, say so plainly.
+- Read-only flow only — no prepare_/send_ calls. Cap at 8 tool calls.
+
+[TOOL_CALLS]
+1. ToolSearch(select:mcp__vaultpilot-mcp__get_health_alerts) -> schema loaded; requires wallet (0x...) and optional threshold (default 1.5).
+2. ToolSearch(select:mcp__vaultpilot-mcp__get_demo_wallet) -> schema loaded.
+3. mcp__vaultpilot-mcp__get_demo_wallet() -> demoActive=true, mode=live, active persona=staking-maxi, EVM address=0x8EB8a3b98659Cce290402893d0123abb75E3ab28.
+4. mcp__vaultpilot-mcp__get_health_alerts(wallet=0x8EB8a3b98659Cce290402893d0123abb75E3ab28) -> { threshold: 1.5, atRisk: [] }.
+
+Total tool calls: 4 (under the 8 cap).
+
+[FINAL_REPLY_TO_USER]
+No health alerts — your active demo wallet (staking-maxi, 0x8EB8...ab28) has no Aave V3 positions below the 1.5 health-factor threshold. Nothing approaching liquidation right now.
+
+[OUTCOME]
+Success. Read-only query completed. Confirmed no at-risk Aave V3 lending positions for the active demo wallet at the default 1.5 health-factor threshold. No state-changing tool calls made. Within tool-call budget (4/8).
+
+[OBSERVATIONS]
+- get_health_alerts requires a wallet argument; in demo mode the agent must resolve "my positions" via get_demo_wallet rather than prompt the user.
+- Active persona was staking-maxi, which is the liquid-staking/restaking archetype and not expected to carry Aave borrows — empty atRisk result is consistent with persona archetype.
+- Tool only covers Aave V3; Compound/Morpho/Kamino/MarginFi health would need separate position queries. Worth noting in a fuller answer if user follows up about other protocols.
+- Default threshold of 1.5 is conservative (catches positions well before HF=1 liquidation). User did not specify a threshold, so default was correct.
+- No VAULTPILOT NOTICE blocks observed in this session's tool responses.

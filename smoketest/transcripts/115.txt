@@ -1,0 +1,32 @@
+SCRIPT_ID: 115
+CATEGORY: incident
+CHAIN: any
+SCRIPT: Are there any active market incidents I should know about?
+====
+
+[USER]
+Are there any active market incidents I should know about?
+
+[PLAN]
+Read-only ask: scan the major EVM lending markets (Compound V3 and Aave V3 on Ethereum) for active incidents using get_market_incident_status. Cap at 8 calls. If both come back clean, report no incidents; if either flags, surface the flagged markets/reserves. Start with Ethereum since that's where most TVL sits; expand to other chains only if budget allows and Ethereum shows something interesting.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_market_incident_status(protocol="compound-v3", chain="ethereum")
+   -> DENIED by harness permission prompt
+2. mcp__vaultpilot-mcp__get_market_incident_status(protocol="aave-v3", chain="ethereum")
+   -> DENIED by harness permission prompt
+
+(Both calls issued in parallel in a single turn; both rejected before reaching the MCP server. No data returned. Stopped at 2 calls, well under the 8-call budget — no point retrying the same tool with different args when the denial is on the tool itself.)
+
+[FINAL_REPLY_TO_USER]
+I couldn't check — the get_market_incident_status tool was denied by the harness on both Compound V3 and Aave V3 (Ethereum) scans, so I have no data to report. Approve the tool (or run /permissions) and I'll re-run the incident sweep.
+
+[OUTCOME]
+Blocked. Zero data gathered. User must grant permission to mcp__vaultpilot-mcp__get_market_incident_status before this question can be answered.
+
+[OBSERVATIONS]
+- Tool schema had to be loaded via ToolSearch first (deferred-tool pattern); that worked fine, the denial happened at invocation time, not at schema-load time.
+- Parallel dispatch of the two protocol scans was the right shape for the budget — one round-trip instead of two — but it also meant both got denied in the same turn rather than giving me a chance to ask the user after the first denial.
+- For an "is anything on fire" question, Compound V3 + Aave V3 on Ethereum is the right minimum sweep; if those came back clean I'd consider extending to base/arbitrum and to solana-protocols, but only with a wallet arg for the latter (demo, no Ledger, so wallet scope is unclear).
+- No VAULTPILOT NOTICE blocks observed (no tool response ever reached me). Preflight skill is loaded per the skills list, which is correct posture even though this was a read-only flow.
+- Demo mode, no Ledger — fine for this question; get_market_incident_status is read-only and chain-agnostic, doesn't touch wallet state unless `wallet` arg is passed (which it wasn't).

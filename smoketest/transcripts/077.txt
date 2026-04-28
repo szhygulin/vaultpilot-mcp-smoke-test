@@ -1,0 +1,30 @@
+SCRIPT_ID: 077
+CATEGORY: education
+CHAIN: any
+SCRIPT
+====
+
+[USER]
+What is liquid restaking and why are people excited about it?
+
+[PLAN]
+- Pure educational/conceptual question. No portfolio data, no chain reads, no transactions involved.
+- Answer from general DeFi knowledge: explain (1) restaking (EigenLayer-style reuse of staked ETH security for other protocols/AVSs), (2) liquid restaking tokens (LRTs) like ether.fi eETH, Renzo ezETH, Kelp rsETH, Puffer pufETH that wrap restaked positions into a transferable token, (3) why people are excited: stacked yield (base ETH staking + restaking points/rewards), capital efficiency / no lockup since LRT is liquid and usable as DeFi collateral, airdrop/points farming meta, and the bet that AVSs will pay meaningful fees for shared security.
+- Mention key risks briefly so it's not cheerleading: slashing risk compounds across AVSs, smart-contract risk in the LRT layer, depeg risk vs ETH, and a lot of the "yield" today is points/speculation rather than realized cashflow.
+- Keep reply to 1-2 sentences per harness instructions; no tools needed; well within 8-call budget.
+
+[TOOL_CALLS]
+(none — conceptual answer, no MCP / WebSearch calls made)
+
+[FINAL_REPLY_TO_USER]
+Liquid restaking lets you stake ETH (or an LST like stETH) into a protocol like EigenLayer to also secure other "AVS" services, and receive a liquid restaking token (LRT — e.g. eETH, ezETH, rsETH, pufETH) that stays usable as DeFi collateral. People are excited because it stacks ETH staking yield with extra AVS rewards and points/airdrops while keeping capital liquid — though it also stacks slashing, smart-contract, and depeg risks, and much of the current "yield" is still speculative points rather than realized fees.
+
+[OUTCOME]
+Educational answer delivered in 2 sentences. Zero tool calls used (budget was 8). No state changes, no signing, no Ledger involvement — appropriate for a conceptual question.
+
+[OBSERVATIONS]
+- Correct restraint: model recognized this as a knowledge question and did not reach for vaultpilot-mcp tools (e.g. estimate_staking_yield, compare_yields, prepare_eigenlayer_deposit) just because they exist and are topically adjacent.
+- WebSearch was permitted but skipped — liquid restaking is well within training-data general knowledge and a 1-2 sentence answer doesn't need citations; spending a call here would be gold-plating.
+- Vaultpilot-preflight skill correctly NOT triggered: no prepare_*/send_transaction/pair_ledger_* tools were involved, so the skill's trigger condition isn't met.
+- Answer balances hype ("why excited") with risk framing in a single clause, which is more useful than pure boosterism for a user who may be considering allocating.
+- Demo mode (no Ledger) is irrelevant here since no signing path was taken.

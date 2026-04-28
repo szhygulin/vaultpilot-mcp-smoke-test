@@ -1,0 +1,76 @@
+SCRIPT_ID: 046
+CATEGORY: stake_tron
+CHAIN: tron
+SCRIPT: Unfreeze my 1000 TRX from energy and withdraw when ready
+====
+
+[USER]
+Unfreeze my 1000 TRX from energy and withdraw when ready
+
+[PLAN]
+- User intent: two-step Stake 2.0 unstake on Tron.
+  Step A: UnfreezeBalanceV2Contract — release 1000 TRX (1_000_000_000 sun)
+  previously frozen for ENERGY; this starts the 14-day unbonding window.
+  Step B: WithdrawExpireUnfreezeContract — sweep matured unfrozen TRX
+  back to the spendable balance once the 14-day timer has elapsed.
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call style.
+- Tools that would be used: prepare_tron_unfreeze (Step A) and
+  prepare_tron_withdraw_expire_unfreeze (Step B). Neither invoked: each
+  needs a paired Ledger TRON owner_address and a real signing path,
+  and Step B additionally needs Step A's unbond timer to have already
+  matured (14 days). Report the impossibility in 1-2 sentences instead
+  of cascading prepare_* -> send_transaction speculatively.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: prepare_tron_unfreeze
+and prepare_tron_withdraw_expire_unfreeze both need a paired Ledger
+TRON address as owner, and the withdraw step also requires the 14-day
+unbond timer (started by the unfreeze) to have already elapsed. Pair a
+Ledger (pair_ledger_tron) and run the unfreeze first; ~14 days later
+I can prepare the withdraw — no broadcast either way.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  was not exercised because no prepare_*/send_transaction was invoked
+  — Step 0 only gates actual signing flows, and none was initiated.
+- Two distinct TRON Stake 2.0 contract types are involved and must not
+  be conflated: UnfreezeBalanceV2Contract (Step A — releases the lock,
+  starts the 14-day unbond window, resource=ENERGY, unfreeze_balance
+  =1e9 sun) vs WithdrawExpireUnfreezeContract (Step B — has no amount
+  field; sweeps ALL matured unfrozen entries for the owner). The user
+  phrased this as one intent ("unfreeze ... and withdraw when ready")
+  but it is fundamentally a two-transaction flow separated by a
+  protocol-enforced cooldown — not something a single prepare_* can
+  satisfy.
+- "When ready" framing is the right user-side phrasing: there is no
+  way for the agent to schedule Step B at T+14d in this harness. The
+  user (or a scheduler outside this session) has to come back and
+  re-prompt for the withdraw once mature. get_tron_staking would, in
+  a real flow, surface the unfrozenV2 list with each entry's
+  expire_time so we can confirm "ready" before invoking Step B.
+- Were a real flow run, preflight Invariants #1 (decode rawDataHex
+  against UnfreezeBalanceV2Contract / WithdrawExpireUnfreezeContract;
+  for Step A confirm resource=ENERGY and unfreeze_balance=1_000_000_000
+  sun; for Step B confirm there is no amount field — withdraw is
+  all-or-nothing per maturity), #2 (recompute the TRON rawData digest
+  the device shows), #4 (PREPARE RECEIPT + on-device clear-sign decode
+  block expected on both calls), #10 (paired TRON owner_address is the
+  trust root for both contract calls) and #12 (second-LLM offer) all
+  apply. No approval-class surface (Invariant #11) — TRON stake-ops
+  are not ERC-20 approvals.
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — zero tool calls
+  emitted, no rawDataHex prepared, no preview, no CHECKS PERFORMED
+  block rendered (none warranted absent a prepare_* response).
+- Mirrors transcript 043 (freeze) as the inverse-direction flow:
+  freeze locks TRX -> ENERGY immediately; unfreeze releases the lock
+  but funds are non-spendable for 14 days; withdraw_expire_unfreeze
+  sweeps them back. The natural script triplet is 043 -> 046-A ->
+  (T+14d) 046-B.

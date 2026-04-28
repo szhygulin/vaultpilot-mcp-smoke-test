@@ -1,0 +1,89 @@
+SCRIPT_ID: 047
+CATEGORY: lend_aave
+CHAIN: ethereum
+SCRIPT: Supply 10000 USDC to Aave v3 on Ethereum
+====
+
+[USER]
+Supply 10000 USDC to Aave v3 on Ethereum
+
+[PLAN]
+- User intent: deposit 10_000 USDC into the Aave v3 Pool on Ethereum
+  mainnet (Pool.supply(asset, amount, onBehalfOf, referralCode=0)),
+  receiving aUSDC 1:1 in return. USDC is 6 decimals, so amount in raw
+  units would be 10_000_000_000. Because the Pool needs to pull USDC
+  via transferFrom, an ERC-20 approve(POOL, amount) is required first
+  unless an existing allowance covers it — prepare_aave_supply returns
+  the approve as the outer tx with the supply embedded in `.next`,
+  meaning two on-device signatures.
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call style.
+- Tool would be prepare_aave_supply with chain="ethereum",
+  asset=0xA0b86991c6218b3c1B5cA27ABc1B8B8B0bD2A1b (mainnet USDC),
+  amount="10000", wallet=<paired Ledger EVM address>. Not invoked
+  because the request is impossible to fulfill end-to-end without a
+  paired Ledger EVM address (wallet) and a real WalletConnect signing
+  path, neither of which is set up here. Report to the user in 1-2
+  sentences instead of cascading prepare_aave_supply -> approve sign
+  -> supply sign -> send_transaction speculatively.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: prepare_aave_supply
+needs a paired Ledger EVM wallet and a live WalletConnect session
+(neither is set up here), and the supply itself is a two-signature
+flow — ERC-20 approve(POOL, 10000 USDC) first, then Pool.supply.
+Pair a Ledger first (pair_ledger_live), then I'll prepare both txs
+for on-device review — no broadcast.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  was not exercised because no prepare_*/send_transaction was invoked
+  — Step 0 only gates actual signing flows, and none was initiated.
+- prepare_aave_supply is the correct tool for this intent (Aave v3
+  Pool.supply on Ethereum mainnet, asset=USDC, amount=10000 human
+  units = 10_000_000_000 base units at 6 decimals, onBehalfOf=wallet,
+  referralCode=0). USDC mainnet address is
+  0xA0b86991c6218b3c1B5cA27ABc1B8B8B0bD2A1b; Aave v3 Pool on Ethereum
+  is 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2. The two-tx shape
+  (approve in outer, supply in `.next`) is the canonical
+  prepare_aave_supply contract — both must be signed in order or the
+  supply tx reverts on transferFrom.
+- Approval surfacing (Invariant #11) would apply on the FIRST tx of
+  the pair: calldata is approve(spender=AavePool, amount=...). With
+  approvalCap omitted (default), the approve is "unlimited" (max
+  uint256), which Invariant #11 mandates flagging as
+  "⚠ UNLIMITED APPROVAL" with the verbatim revoke / get_token_allowances
+  guidance. Passing approvalCap="exact" would scope the approval to
+  the 10000 USDC pull and avoid the unlimited-approval warning at the
+  cost of needing a fresh approve on the next supply.
+- Preflight Invariants #1 (decode calldata locally — outer:
+  approve(POOL, amount); inner: Pool.supply(USDC, 10_000_000_000,
+  wallet, 0)), #2 (recompute keccak256 of EIP-1559 RLP for both txs;
+  match server-reported hashes), #2-chainId (RLP chainId == 1 for
+  Ethereum mainnet — anti-chain-swap defense, since Aave v3 also
+  exists on arbitrum/polygon/base/optimism with different POOL
+  addresses), #4 (expected blocks: PREPARE RECEIPT + CROSS-CHECK
+  SUMMARY + VERIFY-BEFORE-SIGNING with decoded fields — Aave is on
+  the clear-sign whitelist, so no LEDGER BLIND-SIGN HASH expected),
+  #9 (WC session topic surfacing — last 8 chars confirmed against
+  Ledger Live before first send_transaction), #11 (approval
+  surfacing as above), and #12 (second-LLM check offer) would all
+  apply.
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — no calldata
+  prepared, no preview emitted, no CHECKS PERFORMED block rendered
+  (none was warranted absent a prepare_* response).
+- Did not query get_demo_wallet, get_lending_positions, or
+  get_token_allowances — kept tool calls at zero per the 8-call
+  ceiling guidance. Note that get_token_allowances against
+  (wallet, USDC) would be the right pre-check in a real flow: if
+  an existing allowance to the Aave v3 Pool already covers 10000
+  USDC, prepare_aave_supply would skip the approve and return only
+  the supply tx (single signature), which changes the on-device
+  flow shape.

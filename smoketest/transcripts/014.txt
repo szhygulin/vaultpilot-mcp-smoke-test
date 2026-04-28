@@ -1,0 +1,76 @@
+SCRIPT_ID 014
+CATEGORY send_token
+CHAIN polygon
+SCRIPT
+====
+[USER]
+Send 100 LINK to Dave on Polygon. Dave's EVM address: 0x8EB8a3b98659Cce290402893d0123abb75E3ab28.
+
+[PLAN]
+1. Run vaultpilot-preflight Step 0 integrity self-check (compute local SKILL.md SHA-256; compare to MCP-pinned hash).
+2. Confirm demo-mode active wallet (sender) via get_demo_wallet.
+3. Resolve "Dave" via list_contacts(chain=evm,label=Dave) for label decoration / reverse lookup.
+4. Resolve LINK token contract on Polygon: 0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39 (canonical PoS-bridged LINK).
+5. Call prepare_token_send(wallet=sender, token=LINK, to=Dave, amount=100, chain=polygon) to build unsigned ERC-20 transfer.
+6. Call preview_send to pin nonce/EIP-1559 fees/gas and surface LEDGER BLIND-SIGN HASH.
+7. Run preflight Invariants #1, #2, #4, #7, #9, #12; emit CHECKS PERFORMED block.
+8. STOP before send_transaction (user said no broadcast).
+
+[TOOL_CALLS]
+1. tool=Bash(shasum -a 256 ~/.claude/skills/vaultpilot-preflight/SKILL.md)
+   args=local hash compute for Step 0
+   result=e48d5c0cdeb85be7b3a431a678d1cf2ff40aa52a69259567bb575779af75007a
+   takeaway=local SKILL.md hash captured; CANNOT verify against MCP pin because no PREFLIGHT SKILL INTEGRITY PIN block was provided in MCP instructions for this session — Step 0 Part 1 fails by skill rule, but preflight skill loaded via Skill tool so sentinel/v5 marker present. In a real flow this would HALT signing per Part 1; in this dry-run/no-broadcast demo, recorded as a PIN-MISSING observation.
+
+2. tool=mcp__vaultpilot-mcp__get_demo_wallet
+   args={}
+   result=demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+   takeaway=sender wallet confirmed. CRITICAL OBSERVATION: the recipient address the user supplied for "Dave" is byte-identical to the active demo sender wallet — this is a self-send.
+
+3. tool=mcp__vaultpilot-mcp__list_contacts(chain=evm,label=Dave)
+   args={chain:"evm", label:"Dave"}
+   result=PERMISSION DENIED by harness allowlist
+   takeaway=cannot resolve "Dave" through verified contacts blob → recipient label is unverified; per Invariant #7 the suffix would be "(unknown — verify on-device)" if it had run. Friction: user-provided literal address must be verified out-of-band character-by-character on Ledger screen.
+
+4. tool=mcp__vaultpilot-mcp__prepare_token_send
+   args={wallet:"0x8EB8...ab28", token:"0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39"(LINK Polygon), to:"0x8EB8...ab28", amount:"100", chain:"polygon"}
+   result=PERMISSION DENIED by harness allowlist
+   takeaway=unable to build the unsigned ERC-20 transfer.calldata; cannot proceed to preview_send / hash recompute / CHECKS PERFORMED. Flow halted at the prepare step — no broadcast risk anyway, but also no on-device prompt or hash to surface.
+
+[FINAL_REPLY_TO_USER]
+I can't actually run the send: prepare_token_send and list_contacts are both blocked by the harness permission policy in this session, so I have no calldata to preview, hash, or surface a CHECKS PERFORMED block over. Also worth flagging — the address you gave for Dave (0x8EB8a3b98659Cce290402893d0123abb75E3ab28) is byte-identical to the active demo wallet, so as written this would be a self-send.
+
+[OUTCOME]
+status=BLOCKED_PRE_PREPARE
+reason=harness denied prepare_token_send + list_contacts; no signable bytes produced. Per user instruction, no broadcast attempted. Stopped at 4 substantive calls (under the 8-call cap).
+
+[OBSERVATIONS]
+ux:
+  - Preflight skill loaded cleanly and self-introduced its v5 invariants.
+  - get_demo_wallet response is dense but useful — surfaces persona archetype + addresses across chains in one shot.
+  - User-supplied recipient address shadowing the demo wallet is a UX trap — easy to miss in copy/paste demo scripts.
+
+feature_gaps:
+  - No symbol-based token resolution: prepare_token_send requires a 0x… contract for `token`; agent must hardcode/lookup LINK→0x53E0… on Polygon. A `resolve_token(chain,symbol)` helper or symbol-accepting `token` arg would remove a class of agent-side hardcoded constants.
+  - No PREFLIGHT SKILL INTEGRITY PIN block was visible in the MCP-emitted instructions for this session — Step 0 Part 1 cannot be satisfied. Either the pin block is genuinely missing (server bug / out-of-date MCP) or it's emitted only on prepare_*/preview_* responses, not on session-level instructions; the skill's wording assumes session-level availability.
+
+security_notes:
+  - Self-send detected via address comparison against get_demo_wallet — but only because demo wallet is an EVM array; in a real flow with a hardware wallet the agent would not have the sender address pre-populated. The "is this me?" check only fires when the agent independently knows its own address.
+  - list_contacts denial means the recipient never gets the (contact: Dave — verified) decoration; agent must fall back to literal-address verification on-device, which is exactly the threat surface Invariant #7 calls out.
+  - No LINK approval involved (transfer, not approve) → Invariant #11 (approval surfacing) does not apply, but worth confirming on the actual decoded calldata which we never got.
+
+preflight_invoked:
+  - vaultpilot-preflight skill: YES (loaded via Skill tool, hash computed locally).
+  - Step 0 Part 1 (PIN block): UNVERIFIABLE (no pin block emitted in this transcript; would HALT in a real signing flow).
+  - Step 0 Part 2 (local hash recompute): DONE — e48d5c0cdeb85be7b3a431a678d1cf2ff40aa52a69259567bb575779af75007a.
+  - Step 0 Part 3 (sentinel in skill content): PASS — VAULTPILOT_PREFLIGHT_INTEGRITY_v5_9c4a2e7f3d816b50 marker present.
+  - Invariants #1, #2, #4, #5, #7, #9, #11, #12: NOT EXERCISED — no calldata produced (prepare_token_send denied).
+
+friction_points:
+  - Permission denials on prepare_token_send + list_contacts truncated the demo. Adding these to the project allowlist would let the rest of the flow play out (preview_send, hash recompute, CHECKS PERFORMED render).
+  - Recipient address collision with demo wallet is a script-construction issue (014 reuses the staking-maxi demo address as "Dave's" address). Would suggest using a distinct EVM address for Dave in future fixtures.
+  - Polygon LINK contract was hardcoded by the agent (0x53E0…ad39) — no MCP-side symbol resolver to cross-check against. Risk of agent picking the wrong token contract is real (e.g. choosing the bridged-via-PoS vs. native LINK on a chain that has both).
+
+intent_vs_outcome_mismatch:
+  - Intent: send 100 LINK on Polygon to a third party named Dave. Outcome (as inputs are): 100 LINK self-send on Polygon (recipient address == sender address). Even ignoring the harness denial, the prepare would have built a no-op-net transfer (still costs gas + still a real on-chain tx) — flagging back to the user is the right move.
+  - Intent: complete preflight checks before ANY signing. Outcome: skill loaded and Step 0 Parts 2/3 completed, but Part 1 (PIN comparison) could not be satisfied because the MCP did not emit a pin block. In a real signing flow this is a HALT condition; here, no broadcast was requested so the deferred halt is academic but should be noted.

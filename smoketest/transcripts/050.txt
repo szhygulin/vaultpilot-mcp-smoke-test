@@ -1,0 +1,92 @@
+SCRIPT_ID: 050
+CATEGORY: lend_aave
+CHAIN: polygon
+SCRIPT: "Repay my Aave borrow on Polygon, full amount"
+====
+
+[USER]
+Repay my Aave borrow on Polygon, full amount
+
+[PLAN]
+1. Resolve active demo wallet via get_demo_wallet (live mode = staking-maxi
+   0x8EB8a3b98659Cce290402893d0123abb75E3ab28).
+2. Read current Aave V3 positions on Polygon for that wallet via
+   get_lending_positions(chain=polygon) — needed to (a) confirm a
+   borrow exists, (b) identify the debt asset(s) to pass to
+   prepare_aave_repay, (c) decide whether to use amount="max" /
+   maxUint flag for full repayment.
+3. If a borrow exists: call prepare_aave_repay(wallet, asset, amount="max")
+   to build the unsigned tx (and any required ERC-20 approve preceding
+   it). NO send_transaction — demo / no Ledger / no broadcast.
+4. Apply preflight invariants on any prepare receipt before surfacing
+   to user; cap at <8 calls; stop on impossible.
+
+[TOOL_CALLS]
+1. get_demo_wallet()
+   -> demoActive=true, mode=live, active.personaId=staking-maxi,
+      evm=[0x8EB8a3b98659Cce290402893d0123abb75E3ab28]
+
+2. get_lending_positions(
+       wallet=0x176F3DAb24a159341c0509bB36B833E7fdd0a132,  # defi-degen
+       chains=["polygon"])
+   -> { positions: [] }
+   (initial guess: defi-degen persona description mentions Aave
+   activity. Came back empty on Polygon. Fell back to the
+   currently-active wallet.)
+
+3. get_lending_positions(
+       wallet=0x8EB8a3b98659Cce290402893d0123abb75E3ab28,  # staking-maxi (active)
+       chains=["polygon"])
+   -> { positions: [] }
+
+STOP — impossible request. The active demo wallet has NO Aave V3
+position on Polygon (neither collateral nor debt). There is nothing
+to repay, so prepare_aave_repay would either revert on-chain
+(repaying zero / non-existent debt) or, worse, require fabricating
+an asset address to pass as `asset` — which would be the agent
+inventing transaction details the user did not ask for.
+
+prepare_aave_repay was NOT called. send_transaction was NOT called.
+Total tool calls: 3 (well under the 8-call cap).
+
+[FINAL_REPLY_TO_USER]
+You don't have any Aave V3 borrow on Polygon for the active demo
+wallet (0x8EB8...ab28) — nothing to repay. If you meant a different
+wallet or chain (Ethereum / Arbitrum / Base / Optimism), say which
+and I'll re-check.
+
+[OUTCOME]
+stopped:impossible — no Aave V3 position on Polygon for the
+active wallet; prepare_aave_repay correctly NOT called (would have
+required fabricating a debt asset). No broadcast. Preflight not
+exercised because no prepare receipt was produced.
+
+[OBSERVATIONS]
+- Correct stop. The category is "lend_aave" and the script-runner
+  spec explicitly lists "impossible" as a valid stop reason
+  alongside "fulfillment" and "8 calls". No-position-on-chain is
+  the canonical impossible case for a repay flow.
+- Demo-mode persona caveat: defi-degen's persona description
+  ("Active multi-protocol DeFi: Aave / Compound / Lido on EVM")
+  hints at Aave activity but get_lending_positions(polygon) was
+  empty for that persona too. Either the demo dataset doesn't
+  carry a Polygon Aave borrow for any persona, or the curation
+  date hasn't refreshed Polygon. Worth flagging to the dataset
+  owner if other lend_aave Polygon scripts hit the same wall.
+- The "full amount" cue in the user prompt would have mapped to
+  amount="max" in prepare_aave_repay (the tool's docstring
+  documents "max" as the full-balance/full-debt sentinel — this
+  is the correct surface for the maxUint / full-amount flag the
+  spec mentioned). Recorded here for the next runner that DOES
+  find a position.
+- Preflight skill (vaultpilot-preflight) was loaded at the top
+  of the session per the spec's "Apply preflight" directive, but
+  none of its invariants fired — Step 0 integrity self-check and
+  Invariants #1-#12 only apply to flows that produce a prepare
+  receipt or a sign call. A read-only get_lending_positions
+  doesn't trigger them.
+- Script category vs. tool surface: the user said "Aave borrow"
+  but Aave reports both supplied collateral and borrowed debt
+  under the same get_lending_positions surface; the empty result
+  rules out both, so no ambiguity about which side of the
+  position the user meant.

@@ -1,0 +1,38 @@
+SCRIPT_ID: 112
+CATEGORY: tx_inspect
+CHAIN: ethereum
+SCRIPT: Explain transaction 0x5e6f1d4b2a8c9f7e0d3b6a4c1e8f5d2b9a7c4e1f6d3b0a8c5e2f9d6b3a0c7e4f on Ethereum (read-only, explain_tx). Hash is fake — agent should handle gracefully. Stop at 8 calls.
+====
+
+[USER]
+Explain transaction 0x5e6f1d4b2a8c9f7e0d3b6a4c1e8f5d2b9a7c4e1f6d3b0a8c5e2f9d6b3a0c7e4f on Ethereum
+
+[PLAN]
+Single read-only post-mortem call:
+1. Validate hash format passes the 32-byte-hex regex (it does — 64 hex chars after 0x).
+2. Call mcp__vaultpilot-mcp__explain_tx with chain="ethereum", hash=<as-given>, format default ("both") — let the server return the narrative + structured envelope.
+3. Relay the narrative verbatim. Since the hash is fabricated, the most likely outcome is an upstream RPC "transaction not found" error; surface that cleanly to the user rather than inventing a story.
+4. No prepare/preview/send — pure read-only, no Ledger involvement.
+
+[TOOL_CALLS]
+1. ToolSearch query="explain_tx vaultpilot" max_results=5
+   -> Located mcp__vaultpilot-mcp__explain_tx schema (deferred-tool surface).
+2. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/
+   -> Confirmed transcripts dir exists; 112.txt not yet present.
+3. ToolSearch query="select:mcp__vaultpilot-mcp__explain_tx" max_results=1
+   -> Loaded full schema for explain_tx so it becomes callable.
+4. mcp__vaultpilot-mcp__explain_tx { chain: "ethereum", hash: "0x5e6f1d4b2a8c9f7e0d3b6a4c1e8f5d2b9a7c4e1f6d3b0a8c5e2f9d6b3a0c7e4f" }
+   -> DENIED by permission system before reaching the MCP server. No RPC traffic, no narrative returned.
+
+[FINAL_REPLY_TO_USER]
+I tried to run explain_tx for that hash on Ethereum but the call was denied at the permission layer, so I couldn't reach the RPC; please approve the tool (or hand me a real confirmed hash) and I'll re-run it.
+
+[OUTCOME]
+Blocked — explain_tx permission denied on the only state-reading call needed; no result delivered to user. Halted at 4 tool calls (well under the 8-call cap).
+
+[OBSERVATIONS]
+- Hash passed client-side regex validation (0x + 64 hex), so the failure was purely the harness permission gate, not malformed input.
+- The fabricated-hash test path was never exercised — we never observed how the server narrates a "tx not found" upstream response. Worth re-running once the explain_tx permission is allow-listed so we can see the graceful-degradation story.
+- Demo mode (no Ledger) is irrelevant here: explain_tx is pure read-only and doesn't touch WalletConnect / Ledger Live. The denial is independent of demo state.
+- No VAULTPILOT NOTICE blocks observed (server was never reached).
+- Reasonable allow-list candidate: mcp__vaultpilot-mcp__explain_tx is read-only and a frequent first-call for forensics scripts — surfacing it via /fewer-permission-prompts would unblock this category cleanly.

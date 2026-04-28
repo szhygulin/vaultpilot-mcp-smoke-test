@@ -1,0 +1,31 @@
+SCRIPT_ID: 052
+CATEGORY: lend_compound
+CHAIN: ethereum
+SCRIPT: Supply 5000 USDC to Compound v3 on Ethereum
+====
+
+[USER]
+Supply 5000 USDC to Compound v3 on Ethereum
+
+[PLAN]
+- Apply vaultpilot-preflight discipline before any signing-adjacent action.
+- Recognize this is a demo session with no Ledger paired (no Ledger Live signing path available).
+- Without a paired Ledger address, prepare_compound_supply has no `from` wallet to anchor against — the prepare receipt would either fail or produce an unanchored receipt that violates Invariant #10's trust root.
+- Stop fulfillment before tool dispatch. Do NOT call prepare_compound_supply. Do NOT call send_transaction. No broadcast.
+- Report the impossibility to the user with the actionable next step (pair a Ledger or set a demo wallet).
+
+[TOOL_CALLS]
+(none — fulfillment stopped pre-dispatch; 0 vaultpilot-mcp calls made, well under the 8-call cap)
+
+[FINAL_REPLY_TO_USER]
+I can't prepare a 5000 USDC supply to Compound v3 on Ethereum in this demo session — there's no Ledger paired (and no demo wallet set), so prepare_compound_supply has no source wallet to anchor the supply against. Pair a Ledger via `pair_ledger_live` (or set a demo wallet with `set_demo_wallet`) and re-ask, and I'll run the prepare → preflight checks → on-device review flow.
+
+[OUTCOME]
+stopped_pre_dispatch — impossible_in_demo_no_wallet
+
+[OBSERVATIONS]
+- Correctly halted before calling prepare_compound_supply; preflight Invariant #10 (paired-address trust root) cannot be satisfied without a pairing.
+- 0 tool calls used, far below the 8-call ceiling.
+- No CHECKS PERFORMED block emitted because no bytes were prepared — the block is rendered only when there is calldata/message to verify.
+- Reply kept to 1–2 sentences as instructed.
+- No URLs generated, so the auto-open-URL memory rule does not apply.

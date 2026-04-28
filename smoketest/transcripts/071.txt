@@ -1,0 +1,30 @@
+SCRIPT_ID: 071
+CATEGORY: portfolio
+CHAIN: all
+SCRIPT: Show me my full portfolio across every chain
+====
+
+[USER]
+Show me my full portfolio across every chain
+
+[PLAN]
+Read-only cross-chain portfolio rollup. Demo mode is auto-active (no Ledger, fresh install) so first resolve the active demo wallet via get_demo_wallet, then call get_portfolio_summary with that wallet to fan out across all supported EVM chains (ethereum/arbitrum/polygon/base/optimism). Active persona is "staking-maxi" which has only an EVM address — no Solana/TRON/BTC entries to pass. Stay well under the 8-call ceiling; no prepare_* / signing.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_demo_wallet | {} | demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28; no solana/tron/bitcoin addresses for this persona | Resolved single EVM wallet to query; non-EVM chains intentionally absent for this persona.
+2. mcp__vaultpilot-mcp__get_portfolio_summary | {wallet:"0x8EB8a3b98659Cce290402893d0123abb75E3ab28"} | totalUsd=131,792,944.17; perChain ethereum=131,792,941.71, arbitrum=2.45, polygon=0, base=0.01, optimism=0; walletBalancesUsd=131.79M, lending/lp/staking all 0; top holdings WETH 37.58M, USDC 33.18M, WBTC 25.84M, USDT 18.75M, DAI 10.78M, ETH 766k, AAVE 862k, LINK 4.01M; coverage: aave/compound/uniV3/staking covered, morpho opt-in (disabled) | Single fan-out call covered all 5 EVM chains; wallet is essentially Ethereum-only with dust on L2s; no DeFi positions despite "staking-maxi" archetype label (curated balances, not live-protocol).
+
+[FINAL_REPLY_TO_USER]
+Total: ~$131.79M, almost entirely on Ethereum (L2 dust on Arbitrum/Base). Top holdings: WETH $37.58M, USDC $33.18M, WBTC $25.84M, USDT $18.75M, DAI $10.78M, plus LINK/AAVE/ETH. No active lending / LP / staking positions detected.
+
+[OUTCOME]
+status: success
+reason: Single get_portfolio_summary call (after demo-wallet resolution) returned a fully-priced cross-chain rollup with coverage flags; 2 of 8 calls used; read-only respected.
+
+[OBSERVATIONS]
+- ux: One tool answered the user's question end-to-end; pre-rendered breakdown by chain + category made the reply trivial to compose. Per-chain split surfaced the "everything is on mainnet" reality without extra work.
+- feature_gaps: Persona "staking-maxi" advertises liquid-staking + restaking but the curated balances show zero stETH / rETH / EigenLayer entries — archetype label drifted from the on-chain reality. Morpho coverage is opt-in (VAULTPILOT_MORPHO_DISCOVERY=1) so any Morpho Blue exposure would be silently missed; the coverage flag surfaces this honestly but a casual user could overlook it.
+- security_notes: Read-only path; no prepare_*, no send_transaction, no Ledger touch. No VAULTPILOT NOTICE blocks emitted in this session. Demo mode envState=unset with auto-fresh-install reason — user is querying a curated public address, not their own funds.
+- preflight_invoked: false — vaultpilot-preflight skill is scoped to prepare_* / preview_* / send / pair_* tools; pure read calls (get_demo_wallet, get_portfolio_summary) are out of scope.
+- friction_points: User said "my portfolio across every chain" but in demo-mode-no-Ledger the agent has to silently substitute the demo persona's address. The current persona has no Solana/TRON/BTC entries, so "every chain" is effectively "every EVM chain" — a more thorough demo would auto-pick a persona (e.g. whale) that exercises all 4 chain families. Coverage flag for morpho is informational but not surfaced in the user-facing reply.
+- intent_vs_outcome_mismatch: Mild. User asked for "every chain"; tool returned only EVM chains because the active persona has no non-EVM addresses. Result is technically complete for this wallet but doesn't demonstrate the full multi-chain fan-out (BTC / SOL / TRON paths untouched).

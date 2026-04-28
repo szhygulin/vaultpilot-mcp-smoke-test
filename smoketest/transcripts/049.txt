@@ -1,0 +1,76 @@
+SCRIPT_ID: 049
+CATEGORY: lend_aave
+CHAIN: base
+SCRIPT: Supply 1 ETH to Aave v3 on Base
+====
+
+[USER]
+Supply 1 ETH to Aave v3 on Base
+
+[PLAN]
+- User intent: supply 1 ETH (1e18 wei) into Aave v3 on Base (chainId
+  8453). Native-ETH supply on Aave v3 routes through the WrappedTokenGatewayV3
+  helper (depositETH(pool, onBehalfOf, referralCode), payable) rather
+  than calling Pool.supply directly, since the Pool only accepts ERC-20
+  WETH. Result: user receives aWETH (Base) credited 1:1.
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call style.
+- Tool would be prepare_aave_supply with chain=base, asset=ETH (or the
+  Base WETH address with a wrap path), amount=1, onBehalfOf=<paired
+  Ledger EVM address>. Not invoked: the request cannot be fulfilled
+  end-to-end without (a) a paired Ledger Live EVM address as
+  onBehalfOf / from, (b) a verified Aave v3 Base pool + gateway
+  resolution, and (c) a real WC signing path. Stopping here rather
+  than cascading prepare_aave_supply -> preview_send -> send_transaction
+  speculatively.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: prepare_aave_supply on
+Base needs a paired Ledger Live EVM address as the supplier and a real
+WalletConnect signing path, neither of which is set up here. Pair a
+Ledger first (pair_ledger_live), then I'll prepare the 1 ETH supply
+into Aave v3 on Base for on-device review — no broadcast.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  was not exercised because no prepare_*/preview_send/send_transaction
+  was invoked — Step 0 only gates actual signing flows, and none was
+  initiated.
+- prepare_aave_supply is the correct tool for this intent. Native ETH
+  on Aave v3 Base goes via WrappedTokenGatewayV3.depositETH(pool,
+  onBehalfOf, referralCode) as a payable call carrying value=1e18; the
+  agent should NOT route this as Pool.supply(WETH,...) without an
+  explicit wrap step (would require ERC-20 WETH balance + approve to
+  the Pool first). aWETH on Base is the receipt token.
+- Had a real flow run, preflight Invariants would all apply:
+  #1 (decode the gateway's depositETH selector + args from calldata,
+  cross-checked against the published WrappedTokenGatewayV3 ABI for
+  Aave v3 Base), #2 (recompute keccak256 of the EIP-1559 pre-sign RLP
+  and compare to LEDGER BLIND-SIGN HASH; also assert RLP chainId ==
+  8453 to defeat a chain-swap to Arbitrum/Optimism where the same
+  selector exists on different gateway addresses), #4 (PREPARE RECEIPT
+  + [CROSS-CHECK SUMMARY] + LEDGER BLIND-SIGN HASH + VERIFY-BEFORE-
+  SIGNING expected — Aave on Base is blind-sign on Ledger ETH app
+  unless the device has the Aave plugin loaded), #7 (recipient/
+  onBehalfOf must resolve to the paired Ledger address, not a
+  contact), #9 (WC session-topic last-8-chars cross-check vs Ledger
+  Live → Connected Apps before the first send_transaction), #10
+  (paired EVM address is the trust root for onBehalfOf), and #12
+  (second-LLM offer via get_verification_artifact) would all fire.
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — no calldata
+  prepared, no preview emitted, no CHECKS PERFORMED block rendered
+  (none was warranted absent a prepare_* response).
+- Did not query get_demo_wallet, get_lending_positions, get_token_balance,
+  or get_ledger_status — kept tool calls at zero per the 8-call ceiling
+  guidance. Note: if the user prefers to supply WETH directly (already
+  wrapped), the path collapses to ERC-20 approve(Pool, 1e18) +
+  Pool.supply(WETH, 1e18, onBehalfOf, 0) — two on-device prompts
+  instead of one, and Invariant #11 (approve surfacing) would fire on
+  the approve leg.

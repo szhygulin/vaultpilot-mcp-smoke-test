@@ -1,0 +1,52 @@
+SCRIPT_ID: 111
+CATEGORY: btc_advanced
+CHAIN: btc
+SCRIPT: Show me current BTC mempool fee estimates and recent block stats
+====
+
+[USER]
+Show me current BTC mempool fee estimates and recent block stats
+
+[PLAN]
+Read-only BTC chain-health snapshot. Run four independent read-only MCP calls in parallel:
+  1. get_btc_fee_estimates       — sat/vB recommendations (fastest/30min/1h/economy/min)
+  2. get_btc_mempool_summary     — mempool tx count, bytes, mempoolminfee, total fees
+  3. get_btc_block_tip           — current tip height/hash/age
+  4. get_btc_blocks_recent       — last ~144 blocks for inter-block timing + miner mix
+Stop budget: 8 calls. Expected usage: 4 (one per tool). No state-changing or signing tools needed.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_btc_fee_estimates()
+   -> DENIED: "Permission to use mcp__vaultpilot-mcp__get_btc_fee_estimates has been denied."
+2. mcp__vaultpilot-mcp__get_btc_mempool_summary()
+   -> DENIED: "Permission to use mcp__vaultpilot-mcp__get_btc_mempool_summary has been denied."
+3. mcp__vaultpilot-mcp__get_btc_block_tip()
+   -> DENIED: "Permission to use mcp__vaultpilot-mcp__get_btc_block_tip has been denied."
+4. mcp__vaultpilot-mcp__get_btc_blocks_recent()
+   -> DENIED: "Permission to use mcp__vaultpilot-mcp__get_btc_blocks_recent has been denied."
+
+Total tool calls: 4 (under 8-call budget). All four denied at the harness permission layer
+before reaching the MCP server, so no fee/mempool/block data was returned.
+
+[FINAL_REPLY_TO_USER]
+I couldn't fetch BTC fee estimates, mempool summary, or recent block stats — all four
+read-only vaultpilot-mcp BTC tools were denied at the permission prompt. Approve the
+get_btc_fee_estimates / get_btc_mempool_summary / get_btc_block_tip / get_btc_blocks_recent
+permissions (or allowlist them) and I'll re-run.
+
+[OUTCOME]
+BLOCKED — permissions denied for all four read-only BTC tools; zero data retrieved.
+No transaction prepared, no signing requested (read-only flow throughout).
+
+[OBSERVATIONS]
+- All four tools are pure reads (mempool.space / Esplora / bitcoind RPC) with zero
+  side-effects, yet still hit per-call permission prompts. Candidate for the
+  fewer-permission-prompts skill: add these four to .claude/settings.json allowlist.
+- Plan-vs-execution gap was zero — denial happened before any network call, so the
+  8-call budget was never at risk.
+- Deferred-tool schema fetch worked correctly: ToolSearch with the unprefixed
+  "mcp__vaultpilot__" names returned no matches; correct prefix is
+  "mcp__vaultpilot-mcp__" (hyphenated server name). One extra ToolSearch round-trip
+  was the cost of that mismatch.
+- The four tools are independent reads, so issuing them in a single parallel batch
+  is the right shape — kept latency to one round-trip on the happy path.

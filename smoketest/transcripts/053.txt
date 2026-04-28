@@ -1,0 +1,41 @@
+SCRIPT_ID: 053
+CATEGORY: lend_compound
+CHAIN: base
+SCRIPT: Borrow 0.5 ETH from Compound v3 on Base
+====
+
+[USER]
+Borrow 0.5 ETH from Compound v3 on Base
+
+[PLAN]
+- Apply vaultpilot-preflight skill (per MEMORY/auto-rules; this is a state-changing EVM borrow flow targeting Compound v3 on Base).
+- Detect missing/impossible inputs before any MCP call:
+  * No wallet address supplied (prepare_compound_borrow requires `from`).
+  * No evidence the user has supplied non-base collateral into the Compound v3 cWETHv3 (Base) market — Compound v3 is single-borrow-asset per Comet, so borrowing ETH means the WETH Comet on Base, and that Comet only lets you borrow against collateral assets supplied INTO that same Comet (cbETH, wstETH, ezETH, weETH, rETH on Base cWETHv3 last I checked). A user with collateral only in the USDC Comet cannot borrow from the WETH Comet against it.
+  * "0.5 ETH" is ambiguous: Compound v3 borrows are denominated in the base asset of the chosen Comet. The Base WETH Comet borrows WETH (ERC-20), not native ETH. Worth confirming the user means WETH from cWETHv3.
+  * Demo mode, no Ledger paired — even a successful prepare_compound_borrow receipt could not be forwarded to a device; send_transaction would have nothing to sign against.
+- Stop fulfillment before calling prepare_compound_borrow. Do NOT broadcast. Do NOT call send_transaction. Cap is 8 MCP calls; actual is 0.
+- Optional read-only grounding (get_compound_positions / get_compound_market_info) is deferred until the user supplies a wallet address — calling them with no `address` would either error or return chain-wide market data that doesn't answer the borrow-feasibility question.
+
+[TOOL_CALLS]
+(none — fulfillment stopped at missing-input / impossibility check before any MCP call)
+
+Rationale for zero calls:
+- prepare_compound_borrow requires at minimum: `from` (wallet), `chain` (base), `comet` (cWETHv3 on Base), `asset` (WETH), `amount` (0.5e18). We have only `chain` and an inferred `asset`/`comet`. Two of the five fields are missing.
+- Compound v3's borrow-power check is Comet-local: collateralValue inside cWETHv3 (Base) must exceed borrow + buffer. Without the wallet, get_compound_positions cannot tell us whether ANY collateral exists in that specific Comet, so we cannot know whether the borrow is feasible at any size — let alone 0.5 WETH.
+- Shipping an unsigned tx built from guessed inputs would invite the user to rubber-stamp a borrow that either reverts at simulation (no collateral) or, worse, succeeds against an unintended Comet if a future MCP version routed the call differently. Preflight Invariant #1 ("decode the bytes locally before signing") is meaningless if the inputs were never grounded in user-supplied facts to begin with.
+- Demo mode (no Ledger) means even a fully-formed prepare receipt is a dead-end artifact — Step 0 integrity self-check, Invariants #1/#2/#5/#9 all assume an on-device prompt that cannot fire here.
+
+[FINAL_REPLY_TO_USER]
+Three blockers before I can prepare a Compound v3 borrow tx on Base: (1) I need your wallet address — prepare_compound_borrow requires `from`, and I can't read your collateral position in the cWETHv3 (Base) Comet without it; (2) Compound v3 is single-borrow-asset per Comet, so borrowing ETH means the WETH Comet specifically — confirm you've already supplied collateral (cbETH / wstETH / ezETH / weETH / rETH) INTO that Comet, not the USDC one; (3) "0.5 ETH" — the borrow will be paid out as WETH (ERC-20), not native ETH; OK to confirm? Once you give me the address, I'll pull get_compound_positions + get_compound_market_info to size the borrow against your actual collateral and only then build an unsigned tx for on-device review. (Also note: this is demo mode with no Ledger paired, so even after we resolve the inputs the flow stops at the prepare-receipt stage — there's no device to forward to.)
+
+[OUTCOME]
+stopped_fulfillment_missing_inputs_and_demo_mode_no_ledger
+
+[OBSERVATIONS]
+- Request is under-specified along three independent axes (wallet, collateral location, base-asset clarification) — any one of them is sufficient to halt; the combination makes a "best-effort prepare" actively user-hostile.
+- Compound v3's per-Comet collateral isolation is the load-bearing protocol fact: a naive agent that conflates "Compound v3 on Base" with "one borrowable pool" would silently pick the wrong Comet. Surfacing the cWETHv3-vs-cUSDCv3 distinction in the reply is what turns the refusal into a useful answer.
+- ETH-vs-WETH ambiguity is small but real: Compound v3 pays out the base asset, which is ERC-20 WETH on cWETHv3. Users who say "borrow 0.5 ETH" sometimes expect native ETH in their wallet and are surprised by WETH; flagging it now avoids a post-sign "why is this wrapped" support loop.
+- Preflight skill Step 0 (integrity self-check) was not exercised because no prepare_* / send_transaction was attempted — the skill's scope is signing flows, and we never entered one. No PIN block to verify, no SHA-256 to recompute, no sentinel to match.
+- 8-call cap was not approached; actual call count is 0. The cheapest-correct answer to an under-specified borrow request is a clarifying reply, not a speculative read-only fan-out.
+- Demo mode (no Ledger) is a hard floor on this flow regardless of input quality: prepare_compound_borrow can synthesize calldata, but Invariant #5 ("Final on-device match") has no device to match against. Worth telling the user upfront so they don't expect a signable artifact at the end of the disambiguation loop.

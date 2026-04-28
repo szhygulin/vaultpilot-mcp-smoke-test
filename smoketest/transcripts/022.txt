@@ -1,0 +1,60 @@
+SCRIPT_ID: 022
+CATEGORY: swap
+CHAIN: ethereum (assumed)
+SCRIPT: Swap 5000 USDC to WBTC at the best rate available
+
+====
+
+[USER]
+Swap 5000 USDC to WBTC at the best rate available
+
+[PLAN]
+- This is a quote-only request per smoketest harness rules (no broadcast).
+- Apply preflight skill: Step 0 (skill-integrity pin) is gated to signing flows (prepare_*/preview_*/send_transaction). For a pure quote there is no MCP-emitted PIN block to compare against and no signable bytes — the integrity invariants attach when we transition to prepare_swap/preview_send. Surface this scoping decision to the user; do NOT silently skip if/when a signing flow begins.
+- Get demo wallet (live mode requires explicit wallet arg).
+- Call get_swap_quote(wallet, fromChain=ethereum, toChain=ethereum, fromToken=USDC, toToken=WBTC, amount="5000").
+- Inspect response shape: does it return an array of routes from multiple DEXes (Uniswap V3, SushiSwap, Curve, Balancer, 1inch, ...) for comparison, or a single LiFi-selected route?
+- Stop fulfillment before any prepare_swap / preview_send / send_transaction. No bytes, no Ledger prompt, no broadcast. 8th-call halt not reached (this run used 2 tool calls).
+
+[TOOL_CALLS]
+1. get_demo_wallet()
+   → demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+2. get_swap_quote({
+     wallet: "0x8EB8a3b98659Cce290402893d0123abb75E3ab28",
+     fromChain: "ethereum",
+     toChain: "ethereum",
+     fromToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",  // USDC
+     toToken:   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",  // WBTC
+     amount:    "5000"
+   })
+   → returns ONE flat object (not an array). Top-level shape:
+     {
+       fromChain, toChain, fromToken{...}, toToken{...},
+       fromAmount: "5000",
+       toAmountMin: "0.06432361",
+       toAmountExpected: "0.06464684",
+       fromAmountUsd: 4999.42,
+       toAmountUsd: 4976.70768372,
+       tool: "sushiswap",            // ← single chosen tool, not a comparison list
+       executionDurationSeconds: 0,
+       feeCostsUsd: 12.4986,
+       gasCostsUsd: 0.5711,
+       crossChain: false
+     }
+   No `routes[]`, no `alternatives[]`, no per-DEX breakdown. The aggregator (LiFi) has already selected what it considers the best route server-side; it returns the winner only.
+
+[FINAL_REPLY_TO_USER]
+LiFi quote for 5000 USDC -> WBTC on Ethereum (best route picked server-side by the aggregator): expect ~0.06464684 WBTC (min 0.06432361 at 0.5% slippage), via SushiSwap, ~$13.07 in fees+gas. No transaction was prepared or broadcast.
+
+[OUTCOME]
+- Fulfillment stopped at quote (no prepare_swap, no preview, no send).
+- Preflight skill loaded; integrity-pin Step 0 noted as gated to signing flows (no PIN block fires for read-only get_swap_quote, by design).
+- get_swap_quote returns a SINGLE pre-selected route, not a multi-DEX comparison.
+
+[OBSERVATIONS]
+- get_swap_quote shape answer: SINGLE ROUTE. The response surfaces exactly one `tool` field ("sushiswap" in this run) plus the resulting amounts/fees. There is no `routes[]`, `alternatives[]`, `quotes[]`, or any other field that would let the agent compare Uniswap V3 vs SushiSwap vs Curve vs Balancer side-by-side. LiFi's `/quote` endpoint runs the comparison upstream and only emits the winner.
+- User-visible implication: when the user says "best rate available", the agent cannot show a comparison table — only LiFi's claim of which route is best. If the user wants venue choice, the agent has to either (a) call get_swap_quote multiple times with different params (no DEX selector exists in the schema, so this isn't actually possible from this tool), or (b) escape to prepare_uniswap_swap for a Uniswap-V3-direct quote alongside the LiFi number for cross-checking. The tool description does say "best DEX route" but does NOT advertise multi-DEX visibility.
+- If this is a deliberate design choice, worth documenting in the tool description so agents don't promise "comparison" they can't deliver. If multi-route comparison IS desired, the LiFi `/quote` endpoint supports `order=CHEAPEST/FASTEST/RECOMMENDED` and `/routes` returns an array — exposing one of these would close the gap.
+- Wallet+price sanity: WBTC quoted at $76,983; 0.06464684 * 76,983 ≈ $4,977 against $4,999 input = ~0.45% slippage-budget burn (mostly the $12.50 LiFi fee), plausible for stablecoin->BTC on a 5k notional.
+- Preflight scoping: Step 0 didn't fire because no MCP signing-flow response was generated. The skill is loaded and ready; if/when this swap progresses to prepare_swap, the PIN block will be expected and the recompute-hash invariants will attach.
+- Ethereum chain assumption: USDC/WBTC exist on multiple chains (arbitrum, polygon, base, optimism); user said neither chain nor "the best chain", so ethereum picked as the canonical L1 default. A more careful agent might ask, since L2 fees would be a fraction of the $13 cost here.

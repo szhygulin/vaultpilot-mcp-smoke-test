@@ -1,0 +1,51 @@
+SCRIPT_ID: 101
+CATEGORY: hardware
+CHAIN: any
+SCRIPT: verify_ledger_firmware
+====
+
+[USER]
+Verify my Ledger device firmware is genuine and up to date
+
+[PLAN]
+1. Call mcp__vaultpilot-mcp__verify_ledger_firmware to read the connected Ledger's Secure Element firmware version, MCU bootloader version, and target_id via dashboard-level getDeviceInfo APDU.
+2. Interpret the returned verdict (verified / warn / below-floor / unknown-device / wrong-mode / no-device / error) and relay an actionable summary to the user.
+3. If wrong-mode, prompt user to close all apps and return to dashboard, then retry.
+
+[TOOL_CALLS]
+1. Bash(ls /Users/s/dev/test_mcp/smoketest/transcripts/ | tail -5) -> ok (housekeeping; confirmed transcripts dir)
+2. mcp__vaultpilot-mcp__verify_ledger_firmware() -> DENIED by harness permission prompt (no further retries; user not present to approve in demo run)
+
+[FINAL_REPLY_TO_USER]
+I tried to run verify_ledger_firmware (the read-only firmware-pinning check that compares your Ledger's SE firmware + MCU bootloader + target_id against VaultPilot's hardcoded canonical manifest), but the harness denied permission for that MCP tool. Approve the prompt (or allowlist mcp__vaultpilot-mcp__verify_ledger_firmware in settings) and put your Ledger in dashboard mode (close every app) so I can retry.
+
+[OUTCOME]
+status: blocked
+reason: permission_denied on mcp__vaultpilot-mcp__verify_ledger_firmware; cannot complete firmware verification without that single tool call
+
+[OBSERVATIONS]
+ux:
+  - Single-tool task: verify_ledger_firmware is the canonical entry point and there is no agent-side substitute. Permission denial leaves user with no partial answer.
+  - Tool description is clear about dashboard-mode requirement; agent correctly planned to relay that precondition.
+  - get_ledger_device_info would tell us which app is open (useful for wrong-mode hint) but does not itself verify firmware authenticity.
+
+feature_gaps:
+  - No fallback path: if verify_ledger_firmware is denied/unavailable, agent cannot offer a degraded check (e.g., just-report-version-without-manifest-comparison).
+  - verify_ledger_attestation exists as a sibling tool (genuineness via Ledger's attestation key) but was not surfaced as an alternative; tool description for verify_ledger_firmware could cross-reference it for users specifically asking about "genuine".
+  - User asked about both "genuine" AND "up to date" — firmware pinning answers "up to date" cleanly but "genuine" is more naturally answered by attestation. A combined verify_ledger_health wrapper would map better to the user's mental model.
+
+security_notes:
+  - verify_ledger_firmware is read-only (one USB round-trip, dashboard APDU CLA=0xE0 INS=0x01) — denying it has no security upside; it only blocks defensive verification. Recommend allowlisting in project settings.json.
+  - Manifest-pinning approach (hardcoded known-good list) means a fresh Ledger release returns `warn` until VaultPilot bumps the manifest — agent must be careful not to mis-relay `warn` as "compromised".
+  - "Genuine" in the strict sense (counterfeit detection) requires verify_ledger_attestation, which checks Ledger's attestation key signature — firmware version pinning alone does not prove the device is a real Ledger.
+
+preflight_invoked: no (vaultpilot-preflight skill triggers on prepare_* / send_transaction / pair_ledger_* — read-only verification tools are out of scope; correct behavior)
+
+friction_points:
+  - Permission prompt for a read-only tool blocks the entire task; user has to context-switch to settings to unblock.
+  - No way for agent to pre-warn user about dashboard-mode requirement before the permission prompt fires (the prompt happens before the tool runs).
+
+intent_vs_outcome_mismatch:
+  - User intent: binary "is my Ledger safe to use" answer covering both authenticity (attestation) and currency (firmware version).
+  - Tool outcome would have been: firmware-version verdict only. Even on success, agent should have proactively offered to also run verify_ledger_attestation to fully cover the "genuine" half of the question.
+  - Actual outcome: neither half answered due to permission denial.

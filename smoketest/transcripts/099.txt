@@ -1,0 +1,37 @@
+SCRIPT_ID: 099
+CATEGORY: multisig_btc
+CHAIN: btc
+SCRIPT: Prepare a multisig BTC send of 0.05 BTC to Alice and combine my partial signature
+====
+
+[USER]
+Prepare a multisig BTC send of 0.05 BTC to Alice and combine my partial signature.
+Alice BTC: bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h
+Demo mode (no Ledger). Apply preflight. No broadcast.
+
+[PLAN]
+1. Apply vaultpilot-preflight skill (Step 0 integrity self-check, then signing-flow invariants).
+2. Recognize this is a multisig BTC flow requiring three tools: prepare_btc_multisig_send (initiator path — builds + signs with our Ledger key), sign_btc_multisig_psbt (co-signer path), combine_btc_psbts (merge partials).
+3. Per instructions: stop fulfillment / treat as impossible / cap at 8 calls. Demo mode means no Ledger device — signing tools cannot complete.
+4. Halt before any state-changing tool call. Do not broadcast. Write transcript.
+
+[TOOL_CALLS]
+- Skill(vaultpilot-preflight)  -> loaded preflight invariants
+- ToolSearch(select:prepare_btc_multisig_send,sign_btc_multisig_psbt,combine_btc_psbts) -> schemas loaded
+- (no state-changing MCP calls executed; demo mode + no-broadcast guard)
+
+[FINAL_REPLY_TO_USER]
+Halting: this is a no-Ledger demo and you've requested no broadcast, so the multisig signing path (prepare_btc_multisig_send + sign_btc_multisig_psbt) cannot complete on-device, and combine_btc_psbts has no partial PSBTs to merge yet — nothing to fulfill end-to-end here.
+
+[OUTCOME]
+stopped_fulfillment
+
+[OBSERVATIONS]
+- Preflight Step 0 (integrity self-check) would normally run first; in demo mode with no actual prepare receipt no PIN block is processed.
+- prepare_btc_multisig_send is the initiator path — it both builds the PSBT AND signs with our Ledger key in one call (would require device).
+- sign_btc_multisig_psbt is the co-signer path — requires an externally-produced PSBT input, which the user did not supply.
+- combine_btc_psbts requires 2-15 partial PSBTs sharing the same unsigned tx body; user supplied zero.
+- Recipient address bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h is a bech32 P2WPKH mainnet address (valid format). No contacts-blob lookup performed in demo mode.
+- Amount 0.05 BTC well under any fee-cap concern; multisig vbyte is ~2-4x P2WPKH so absolute fee scales accordingly.
+- Phase 3 P2WSH only (no taproot multisig support yet).
+- 8-call cap respected: 2 tool invocations total (Skill load + ToolSearch).

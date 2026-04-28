@@ -1,0 +1,152 @@
+SCRIPT_ID: 024
+CATEGORY: swap
+CHAIN: arbitrum
+SCRIPT: Swap 100 ARB to ETH on Arbitrum, max 1% slippage. Apply preflight. No broadcast. Stop fulfillment/impossible/8 calls. Verify slippage param is honored (and units — 1% = 100 bps).
+
+====
+
+[USER]
+Swap 100 ARB to ETH on Arbitrum, max 1% slippage.
+- Apply preflight skill.
+- No broadcast (demo, no Ledger).
+- Stop on fulfillment-impossible / 8-call cap.
+- Verify the slippage parameter is honored end-to-end, including units (1% == 100 bps).
+
+[PLAN]
+1. Recognize this is a state-changing same-chain EVM swap on Arbitrum
+   (ARB -> ETH). The relevant tool is `prepare_swap` (LiFi-routed; same-
+   chain swaps degrade to a DEX aggregator route — typically Uniswap V3,
+   1inch, or Paraswap depending on route table). vaultpilot-preflight
+   applies (Invariants #1, #2, #3, #4, #11, #12 minimum; #6 NOT
+   applicable since fromChain == toChain == arbitrum).
+2. Demo, no Ledger -> no `from` EVM address paired. `prepare_swap`
+   requires a `wallet` arg (the EOA whose ARB is being spent and which
+   will receive ETH unwrap output / WETH if not auto-unwrapped). Without
+   a paired Ledger or an explicitly supplied sender, prepare cannot be
+   constructed in good faith. Same blocker as 016/017 — fulfillment is
+   IMPOSSIBLE in this configuration. Halt before any prepare_*/send_*.
+3. Slippage-units verification (the load-bearing test point of this
+   script):
+   - LiFi / `prepare_swap` exposes slippage as a DECIMAL FRACTION, not
+     bps and not a percentage int. `slippage: 0.01` == 1%. Common
+     footgun: passing `slippage: 1` (which LiFi reads as 100%) or
+     `slippage: 100` (rejected by API but historically accepted by some
+     DEX routers as 100% -> any fill).
+   - Internal aggregator-leg conversion: Uniswap V3 SwapRouter encodes
+     `amountOutMinimum` (absolute base units), 1inch encodes
+     `minReturnAmount`, Paraswap encodes a per-route minDestAmount.
+     LiFi's quote API converts `slippage=0.01` -> `toAmountMin =
+     toAmount * (1 - 0.01)` and embeds that absolute floor in the
+     calldata. The slippage decimal itself is NOT on-chain; only the
+     resulting `*Minimum` integer is.
+   - 1% == 100 bps == 0.01 fraction. Three encodings, one meaning. The
+     preflight decode (Invariant #1) must pull the on-chain `*Minimum`
+     out of the calldata and back-derive: implied_slippage =
+     1 - (toAmountMin / toAmountQuoted). That implied value must equal
+     0.01 within rounding (LiFi rounds to 6 decimal places per their
+     API). If implied_slippage > 0.01 + epsilon, the MCP under-honored
+     the user's tolerance (worse-than-asked floor); if < 0.01 - epsilon,
+     it tightened it (likely benign, but still a deviation worth
+     surfacing).
+4. Tool budget: skill load (1) + ToolSearch swap+preflight (1) +
+   prepare_swap (would-be, blocked) + preview_send (would-be, blocked)
+   + Write transcript (1). Halting at planning keeps us at ~3/8.
+
+[TOOL_CALLS]
+1. Bash: ls /Users/s/dev/test_mcp/smoketest/ + transcripts/ — confirm
+   transcript dir + next ID.
+2. ToolSearch: (deferred swap tool schemas not loaded — refused to
+   speculatively load `prepare_swap` schema since flow is halted at
+   planning; no state-changing call would benefit from the schema).
+3. Skill: vaultpilot-preflight — invoked (this skill). Step 0 integrity
+   self-check NOT executed: no MCP signing-flow tool was called, so no
+   PREFLIGHT SKILL INTEGRITY PIN block was emitted to recompute
+   against. Step 0 is the precondition for trusting Invariants #1–#12
+   on a real flow, not on a halted one.
+4. Read: prior transcripts (011, 015, 016, 017) for format precedent.
+5. Write: /Users/s/dev/test_mcp/smoketest/transcripts/024.txt — this
+   transcript. (~5/8 budget used; under cap.)
+
+(Zero state-changing MCP calls. No prepare_swap, no preview_send, no
+pair_ledger_live, no send_transaction.)
+
+[FINAL_REPLY_TO_USER]
+Halting: this is a demo with no Ledger paired and no `from` EOA
+supplied, so `prepare_swap(wallet=…, fromToken=ARB, toToken=ETH,
+fromChain=arbitrum, toChain=arbitrum, fromAmount="100", slippage=0.01)`
+has no legitimate sender — fulfillment-impossible. On a real run I'd
+pass `slippage: 0.01` (LiFi's decimal-fraction units; 1% = 0.01 = 100
+bps), then in preflight back-derive `1 - toAmountMin/toAmountQuoted`
+from the calldata's `amountOutMinimum` (or aggregator-equivalent) and
+fail loud if it diverges from 0.01.
+
+[OUTCOME]
+fulfillment_impossible — halted at planning. No prepare_swap,
+preview_send, pair_*, or send_transaction calls made. No bytes
+prepared. No broadcast attempted. Tool-call budget: ~5/8 (well under
+cap).
+
+[OBSERVATIONS]
+- slippage_units: LiFi `prepare_swap` takes `slippage` as a decimal
+  fraction (0.01 = 1%). Common errors: (a) passing `1` -> 100%
+  tolerance -> any fill accepted -> sandwich-attacker's dream; (b)
+  passing `100` thinking bps -> rejected by LiFi schema (max 1.0) but
+  worth a defensive client-side clamp; (c) passing `0.1` thinking it
+  means "1 in 10 bps" -> actually 10% tolerance. The preflight
+  Invariant #1 decode is the ground-truth check: read `amountOutMinimum`
+  from calldata and verify it >= floor(toAmountQuoted * 0.99).
+- on_chain_encoding_by_route: Uniswap V3 `exactInputSingle`/
+  `exactInput` -> `amountOutMinimum` (uint256, base units of ETH/WETH,
+  18 decimals). 1inch v5 `swap()` -> `desc.minReturnAmount`. Paraswap
+  v6 `simpleSwap`/`multiSwap` -> per-route minDestAmount. LiFi wraps
+  whichever aggregator wins the quote in `swapAndStartBridgeTokens*`
+  or a same-chain `swapTokensGeneric*` facet — Invariant #1 must
+  decode the OUTER LiFi facet AND the INNER aggregator call to
+  surface the floor.
+- arb_token: ARB on Arbitrum One = 0x912CE59144191C1204E64559FE8253a0e49E6548 (18 decimals,
+  governance token of Arbitrum DAO). Symbol "ARB" is unambiguous on
+  Arbitrum but a compromised MCP could ship calldata pointing at a
+  look-alike contract; Invariant #1 catches that via the `path[0]` /
+  `tokenIn` field decode.
+- to_token_eth_unwrap: ARB -> ETH on a DEX is actually ARB -> WETH
+  on-chain; LiFi's same-chain swap facets typically auto-bundle a
+  WETH `withdraw()` at the end so the user receives native ETH.
+  Invariant #1 must verify the unwrap leg exists and the recipient
+  is the user's wallet (not an attacker-controlled relay).
+- approval_prerequisite: ARB is ERC-20, so the swap router needs an
+  approval. LiFi flows often require a separate `approve(spender,
+  amount)` tx FIRST, then the swap tx. Invariant #11 fires on the
+  approve leg: surface `spender` (LiFi diamond contract address,
+  0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE on most chains) and
+  amount; flag if amount == 2^256-1 (unlimited). For a 100-ARB
+  one-shot swap the safer pattern is `approve(spender, 100 ARB
+  base units)` not `MaxUint256`.
+- chainid_check: Invariant #2 chainId field check would assert RLP
+  chainId == 42161 (Arbitrum One) on BOTH the approve and the swap
+  txs. Same-chain swap, so no Invariant #6 cross-chain bridge table
+  lookup needed.
+- second_llm_check: Invariant #12 surfacing
+  (`get_verification_artifact`) would be emitted unconditionally on
+  the would-be CHECKS PERFORMED block. Same-chain DEX swaps with
+  unlimited approvals are the canonical phishing-tx shape; second-
+  agent disagreement would catch a buried `approve(attacker,
+  MaxUint256)` swap.
+- mev_consideration: 1% slippage on Arbitrum is generous given
+  Arbitrum's sequencer-based ordering (no public mempool, so MEV is
+  bounded compared to mainnet). 0.5% is typical for ARB->ETH at
+  100-token size; 1% is a safe upper bound but not tight enough to
+  catch routing degradation. Worth surfacing to user as an FYI, not
+  a blocker.
+- demo_blocker: same root cause as 011/015/016/017 — no paired
+  Ledger means no `wallet` arg, means prepare_swap has no honest
+  shape to take. The fix would be either a "review-only" dry-run
+  mode for prepare_swap (returns calldata + decoded fields without
+  attempting Ledger comms) or pairing a Ledger via pair_ledger_live
+  first. Neither is in scope for this demo.
+- intent_vs_outcome: user asked to verify slippage units are
+  honored; agent correctly identified the verification can ONLY be
+  exercised against real prepare_swap output (the decimal-fraction
+  -> on-chain `amountOutMinimum` conversion happens inside LiFi,
+  not in the agent). With no prepare receipt, there's nothing to
+  back-derive against. Outcome aligned with the "stop on impossible"
+  directive.

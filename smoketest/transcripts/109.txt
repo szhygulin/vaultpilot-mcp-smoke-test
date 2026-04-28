@@ -1,0 +1,162 @@
+SCRIPT_ID: 109
+CATEGORY: btc_advanced
+CHAIN: btc
+SCRIPT: RBF-bump my pending BTC transaction with a higher fee
+====
+
+[USER]
+RBF-bump my pending BTC transaction with a higher fee.
+Demo, no Ledger. Apply preflight. No broadcast. Stop fulfillment / impossible / 8 calls.
+
+[PLAN]
+1. Apply vaultpilot-preflight skill — `prepare_btc_rbf_bump` is a state-changing prepare_*
+   call (its receipt feeds send_transaction), so this is a signing flow and Step 0 + the
+   numbered invariants are in scope. In demo mode the MCP round-trip is simulated, but the
+   skill semantics still apply: load the skill, plan the verification gates, and refuse to
+   move past prepare without explicit user confirmation.
+2. Recognize the request is under-specified for prepare_btc_rbf_bump's required schema:
+     - `wallet`: paired BTC source (bc1q.../bc1p...) that signed the original tx — not given.
+     - `txid`: 64-hex txid of the stuck mempool tx — not given.
+     - `newFeeRate`: sat/vB for the replacement — "higher fee" is qualitative, not a number.
+   None of the three required args is in the user's message; cannot construct the call.
+3. Do NOT speculatively call prepare_btc_rbf_bump with placeholder values — that would
+   either error at the schema layer or, worse, succeed with bytes the user never authorized.
+   Same discipline as 010's BTC native send: clarify first, prepare second.
+4. The right read-only sidecars to offer / queue (NOT auto-call them speculatively under
+   the no-broadcast + 8-call ceiling):
+     - `get_btc_tx_history(wallet)` to find the user's most recent unconfirmed tx if they
+       can't recall the txid.
+     - `get_btc_fee_estimates()` to suggest a concrete sat/vB target for "higher fee" —
+       satisfies BIP-125 rule 4 (new abs fee ≥ old abs fee + 1 sat/vB × new vsize).
+     - `get_btc_mempool_summary()` for the current congestion picture so "higher" is
+       calibrated to where the next-block band actually sits.
+5. Walk the user through the BIP-125/RBF refusal cases up front so they aren't surprised
+   if prepare_btc_rbf_bump rejects: original already confirmed, no BIP-125-eligible input,
+   inputs span multiple wallets (multi-source RBF out of scope), no change output (CPFP
+   territory not RBF), BIP-125 rule 4 violation, change shrinks below 546-sat dust, fee-cap
+   guard tripped (override via `allowHighFee: true` after confirming).
+6. RBF-bump is CLEAR-SIGNED on the Ledger BTC app — same model as prepare_btc_send.
+   The device walks every output (recipients verbatim from the original tx + the shrunk
+   change) and the new fee on-screen. There is NO blind-sign hash to pre-match
+   (Invariant #2's hash recompute does not apply to BTC); the load-bearing invariants
+   are #1 (decode the prepare receipt locally), #3 (CHECKS PERFORMED block), #5 (final
+   on-device match), #7 (contacts label decoration on the preserved recipient lines),
+   #12 (second-LLM offer). Invariant #9 (WC session topic) does not apply — BTC signs
+   over USB HID, not WalletConnect.
+7. Reply 1-2 sentences asking for the missing args (txid, source wallet, target sat/vB
+   or permission to read get_btc_fee_estimates), then stop. Zero MCP tool calls. Well
+   under the 8-call ceiling.
+
+[TOOL_CALLS]
+1. ToolSearch select:mcp__vaultpilot-mcp__prepare_btc_rbf_bump — schema loaded only
+   (deferred-tool definition fetched; not counted toward the 8-call MCP cap, same
+   accounting as 104). Confirms required args: {wallet, txid, newFeeRate} and the
+   optional `allowHighFee` fee-cap override.
+2. (skipped — demo + missing args) mcp__vaultpilot-mcp__get_btc_tx_history({wallet})
+   — would surface the user's recent unconfirmed tx + its txid + its current fee rate
+   so we know what "higher" needs to beat for BIP-125 rule 4.
+3. (skipped — demo + missing args) mcp__vaultpilot-mcp__get_btc_fee_estimates()
+   — would return mempool.space tier rates so "higher fee" maps to a concrete sat/vB.
+4. (skipped — would only fire after the user supplies wallet+txid+newFeeRate)
+   mcp__vaultpilot-mcp__prepare_btc_rbf_bump({
+       wallet:      "<bc1q.../bc1p... source that signed the original>",
+       txid:        "<64-hex of the stuck mempool tx>",
+       newFeeRate:  <sat/vB satisfying BIP-125 rule 4>,
+       // allowHighFee omitted; only set to true after explicit user confirmation
+       //   if the fee-cap guard trips on a legit congestion bump.
+     })
+   Expected response shape: PREPARE RECEIPT block + per-output decode (every original
+   recipient preserved verbatim + shrunk change output marked isChange=true) + new fee
+   in BTC and sat/vB + sequence=0xFFFFFFFD (replacement remains RBF-eligible) + 15-min
+   handle. PREFLIGHT SKILL INTEGRITY PIN block expected in MCP server-level instructions
+   for Step 0 to consume.
+5. (skipped — script directive: no broadcast)
+   mcp__vaultpilot-mcp__send_transaction({ handle, confirmed: true, userDecision: "send" })
+   — only after CHECKS PERFORMED renders, the user replies "send", AND the user confirms
+   the on-device clear-signed outputs + new fee match what we surfaced (Invariant #5).
+
+Total real MCP tool calls in this simulation: 0 (demo, args missing). 1 ToolSearch
+schema fetch (not an MCP call). Stayed well under the 8-call ceiling.
+
+[FINAL_REPLY_TO_USER]
+I can't fire `prepare_btc_rbf_bump` yet — it needs three required args I don't have:
+(a) the **`txid`** of the stuck tx (64-hex), (b) the paired BTC source **`wallet`**
+(`bc1q...` or `bc1p...` — Phase 1 scope; multi-source RBF and legacy/P2SH-wrapped
+sources are out of scope), and (c) a concrete **`newFeeRate`** in sat/vB — "higher" needs
+to satisfy BIP-125 rule 4 (new absolute fee ≥ old absolute fee + 1 sat/vB × new vsize),
+so I can't pick a number blind. Reply with the txid + source address and either a
+target sat/vB or "pull current fee estimates" and I'll call `get_btc_fee_estimates`
++ `get_btc_tx_history` first to suggest a concrete bump, then prepare the replacement
+(clear-signed on the Ledger BTC app — every preserved recipient + shrunk change + new
+fee walked on-screen, no blind-sign hash to pre-match).
+
+ⓘ Second-LLM check available (vaultpilot-preflight Invariant #12): once the prepare
+receipt is in hand, you can ask me to run `get_verification_artifact` and paste it
+into a separate LLM session (ideally a different provider) for an independent read of
+what the replacement tx does. If the two agents disagree, the first one was lying — abort.
+
+[OUTCOME]
+PARTIAL / AWAITING-USER-INPUT. Cannot fulfill end-to-end because all three required
+prepare_btc_rbf_bump args are missing from the user's message and the no-broadcast
+directive forbids speculative prepare. Stopped at 1 ToolSearch (schema load) + 0 MCP
+tool calls — well under the 8-call ceiling.
+
+[OBSERVATIONS]
+- prepare_btc_rbf_bump is one of the few prepare_* tools where ALL three required
+  args are concrete identifiers (txid, wallet, newFeeRate) with no sane defaults —
+  unlike prepare_btc_send where feeRateSatPerVb defaults to halfHourFee and rbf
+  defaults to true. RBF-bump cannot be invoked with partial info; clarify-first is
+  the only correct posture.
+- BIP-125 rule 4 is the load-bearing constraint and is easy to undershoot if the
+  user just says "higher": new ABSOLUTE fee must be ≥ old absolute fee + 1 sat/vB ×
+  new vsize. A naive "+1 sat/vB" bump from the original rate FAILS rule 4 because the
+  new vsize is approximately equal to the old vsize, so the absolute-fee delta has to
+  cover that whole multiplier, not just the rate delta. Users routinely get this wrong;
+  worth surfacing once we have numbers.
+- Refusal-case taxonomy from the schema description (worth surfacing if prepare
+  rejects):
+    1. Original already confirmed (RBF impossible — too late).
+    2. No BIP-125-eligible input (sequence ≥ 0xFFFFFFFE on every input — opt-out final).
+       Note: every tx prepare_btc_send produces is RBF-eligible by default (sequence
+       0xFFFFFFFD), so this only bites for txs from external wallets.
+    3. Multi-source RBF — inputs span multiple wallets. Out of Phase 1 scope; would
+       need separate prepare flows per source which doesn't compose into a single
+       atomic replacement.
+    4. No change output — nothing to shrink to absorb the bump. CPFP (child-pays-for-
+       parent) is the alternative there but VaultPilot doesn't expose a CPFP prepare.
+    5. Bumped change below dust (546 sats). Edge case on small-leftover sends; the
+       user would need to either accept the original confirming slowly or rebuild
+       the tx from scratch (not RBF — the input set would change, breaking the
+       replacement semantics).
+    6. Fee-cap guard: max(10 × newFeeRate × vbytes, 2% of recipient output value).
+       For a typical 0.001-0.01 BTC send the 2% term dominates and is generous;
+       only extreme congestion bumps trip the 10× rate term. Override via
+       `allowHighFee: true` after explicit user confirm.
+- Sequence=0xFFFFFFFD on the replacement keeps it RBF-eligible itself — the user
+  can bump again if the new rate is still too low. This composes well with the
+  "low priority is fine" pattern from 010 (BTC native send): start cheap, bump if
+  it stalls.
+- Preflight invariants applicable to this flow: #1 (decode receipt), #3 (CHECKS
+  PERFORMED), #5 (final on-device match), #7 (contacts decoration on preserved
+  recipient lines — every original recipient is reused verbatim, so the same label
+  decoration logic applies as on the original send), #10 (only if a new pair_ledger_btc
+  fires this session — not expected for a bump on an existing send), #12 (second-LLM
+  offer, unconditional once a real prepare receipt exists). NOT applicable: #2 (no
+  blind-sign hash on BTC clear-sign), #4 chain-ID branch (no chainId on BTC), #6
+  (LiFi cross-chain bridges), #8 (sign-message preview), #9 (WC session topic — BTC
+  is USB HID), #11 (ERC-20/Permit2 approvals — BTC has no token-approval surface).
+- Address-poisoning angle: since RBF preserves every recipient verbatim from the
+  original tx, the recipient set was already verified at the original prepare_btc_send
+  time. The bump receipt should re-render those addresses with the same contacts-label
+  decoration (Invariant #7) — a NEW label or a `⚠ contacts file failed verification`
+  warning between the original send and the bump would be a tamper signal worth
+  flagging. Worth comparing the bump's recipient lines against what the original
+  prepare_btc_send showed if that transcript is available.
+- Demo mode + no-Ledger context: even with all three args supplied, prepare_btc_rbf_bump
+  would error at the Ledger-not-paired layer (no `wallet` to pair against), and
+  send_transaction is forbidden by the script directive anyway. The clarify-first
+  posture is the right outcome regardless of demo state.
+- Script-id 109 sits between 010 (BTC native send) and 110 (BIP-137 message sign,
+  Invariant #8 applies there) — the BTC advanced category seems to walk through
+  successively trickier flows. RBF-bump is the natural follow-on to a stalled
+  prepare_btc_send, so 010 → 109 is the realistic user journey.

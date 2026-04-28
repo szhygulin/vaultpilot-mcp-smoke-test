@@ -1,0 +1,64 @@
+SCRIPT_ID: 107
+CATEGORY: readonly_share
+CHAIN: any
+SCRIPT: Revoke the read-only invite I created last week
+====
+
+[USER]
+Revoke the read-only invite I created last week
+
+[PLAN]
+The user wants to revoke a specific read-only invite but did not provide
+its `name`. The `revoke_readonly_invite` tool requires a name argument.
+"Last week" is not directly machine-resolvable from issuer-side bookkeeping
+without first inspecting the list of invites and matching `issuedAt`
+timestamps. Plan:
+  1) Call `list_readonly_invites` (read-only, no side effects, includeInactive
+     default=false so we only see active invites — revoked/expired ones are
+     irrelevant since they're already invalidated).
+  2) Filter the returned entries by `issuedAt` falling in the prior calendar
+     week relative to today (2026-04-28, a Tuesday — "last week" =
+     2026-04-20..2026-04-26 in a Mon-start week, or 2026-04-19..2026-04-25
+     Sun-start; if exactly one invite falls in either bracket, that's the
+     match).
+  3) If exactly one match: call `revoke_readonly_invite({ name })` with that
+     invite's `name` and confirm the result to the user, including the
+     server-side caveat that revocation is issuer-side bookkeeping only —
+     the raw token, if still held by the recipient, can continue to be used
+     to read public chain data for the listed addresses (Model A limitation
+     per tool description).
+  4) If zero or multiple matches: stop and ask the user to disambiguate
+     by name rather than guess — revoking the wrong invite is annoying to
+     undo (you'd have to re-issue and redistribute a fresh token).
+Stays well within the 8-call budget (worst case: 2 MCP calls).
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__list_readonly_invites()
+   -> DENIED by harness permission prompt (user did not approve).
+   Stopped here — cannot enumerate invites without this read-only call,
+   and guessing a `name` to pass to revoke_readonly_invite would risk
+   revoking the wrong invite.
+
+[FINAL_REPLY_TO_USER]
+I tried to list your active read-only invites to find the one issued last
+week, but the `list_readonly_invites` call was denied. Approve that
+read-only call (or tell me the invite's `name` directly) and I'll revoke it.
+
+[OUTCOME]
+blocked_pending_user_input — list call denied; no revoke attempted.
+
+[OBSERVATIONS]
+- Correct sequencing: list first (read-only, side-effect-free) to resolve
+  the fuzzy "last week" reference into a concrete `name`, then revoke.
+  Never guess a name for a state-changing call.
+- "Last week" is ambiguous (Mon-start vs Sun-start week, and whether the
+  user means "the previous 7 days" or "the previous calendar week").
+  Resolving against actual `issuedAt` timestamps is more reliable than
+  asking the user to compute the date themselves, but if multiple invites
+  fall in the window, asking is the right move.
+- Surfaced the Model A caveat in the plan: issuer-side revocation does not
+  recall a token already in the recipient's hands. Worth mentioning to the
+  user on success so they understand what revocation does and does not buy
+  them — and so they can rotate addresses if the share was sensitive.
+- Budget: hit 0/8 tool calls due to the permission denial; 2/8 expected on
+  the happy path.

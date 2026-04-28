@@ -1,0 +1,66 @@
+SCRIPT_ID: 076
+CATEGORY: education
+CHAIN: ethereum
+SCRIPT
+====
+
+[USER]
+Explain me the KelpDAO hack and how it influences my portfolio. Do I have rsETH exposure?
+
+[PLAN]
+1. Pull active demo wallet via get_demo_wallet to know which address to scan.
+2. WebSearch the KelpDAO LayerZero bridge exploit (April 2026) to gather authoritative incident facts (size, mechanism, attribution, response).
+3. Run get_portfolio_summary on the active EVM wallet across all supported chains and look for rsETH (or wrapped/derivative variants) in the breakdown.
+4. Compose a concise educational explainer + a definitive answer on rsETH exposure based on the read.
+5. Stay well under the 8-call ceiling — the explanation should not require chain-by-chain isolation; one consolidated portfolio call covers it.
+
+[TOOL_CALLS]
+1. ToolSearch query="vaultpilot portfolio" -> surfaced get_portfolio_summary, get_portfolio_diff, get_daily_briefing, etc.
+2. ToolSearch query="WebSearch" -> surfaced WebSearch deferred schema.
+3. ToolSearch select:WebSearch,mcp__vaultpilot-mcp__get_demo_wallet -> loaded callable schemas.
+4. WebSearch query="KelpDAO LayerZero bridge hack rsETH April 2026 DVN exploit"
+   -> Returned: April 18 2026 incident, ~$292M / 116,500 rsETH minted (~18% of supply),
+      attack on off-chain DVN infra (compromised internal RPC nodes + DDoS on external),
+      rsETH was on a 1-of-1 LayerZero Labs DVN config (no second verifier),
+      attribution: likely DPRK Lazarus / TraderTraitor,
+      KelpDAO paused contracts to block a follow-on $95M theft,
+      Arbitrum Security Council froze 30k ETH downstream,
+      LayerZero banned 1/1 DVN configs going forward.
+5. mcp__vaultpilot-mcp__get_demo_wallet
+   -> demoActive=true, persona=staking-maxi, EVM addr 0x8EB8a3b98659Cce290402893d0123abb75E3ab28.
+6. mcp__vaultpilot-mcp__get_portfolio_summary wallet=0x8EB8...ab28 chains=[eth,arb,opt,base,polygon]
+   -> totalUsd ~ $131.79M.
+      Breakdown: WETH 16,352 (~$37.58M), WBTC 335.24 (~$25.84M),
+      USDC ~$33.18M, USDT ~$18.75M, DAI ~$10.78M,
+      LINK ~$4.01M, AAVE ~$0.86M, ETH ~$0.77M, UNI ~$25k, dust elsewhere.
+      lending=[], lp=[], staking=[].
+      No rsETH, no Kelp-derivative tokens, no EigenLayer restaking position present.
+
+Total tool calls: 6 (under the 8 cap).
+
+[FINAL_REPLY_TO_USER]
+The KelpDAO hack (April 18, 2026) drained ~$292M / 116,500 rsETH by exploiting a 1-of-1
+LayerZero DVN config — attackers compromised internal RPC nodes feeding the lone verifier
+and DDoS'd external ones, so the DVN signed off on forged mint data; attribution is leaning
+toward DPRK's Lazarus. Your demo wallet has zero rsETH exposure: the only ETH-class asset
+you hold is plain WETH (~16.3k WETH ≈ $37.6M), no restaking tokens or Kelp positions, so
+the headline-risk hits you only via broad ETH/DeFi sentiment, not directly.
+
+[OUTCOME]
+success — incident summary delivered, rsETH exposure conclusively answered as "none".
+
+[OBSERVATIONS]
+- get_demo_wallet returned the staking-maxi persona despite the persona's name suggesting
+  LST/restaking concentration; the actual balance sheet is more "blue-chip ETH/BTC + stables"
+  than restaking. Worth flagging upstream — the archetype label and curated balances may
+  drift apart over time.
+- get_portfolio_summary's breakdown.staking is empty for this wallet, which corroborates
+  "no Kelp / EigenLayer position" without needing a separate get_staking_positions call.
+- Single portfolio read across all 5 EVM chains was sufficient; no need to fan out to
+  get_token_balance per chain. Tool budget used efficiently (6 of 8).
+- Consider adding rsETH (and other major LRTs: ezETH, weETH, pufETH) to a curated
+  "high-risk-this-week" watchlist the agent can match against portfolio rows during
+  incident-explainer flows — would let the answer be deterministic rather than relying on
+  the agent eyeballing the breakdown.
+- WebSearch returned a clean cluster of sources (Chainalysis, CoinDesk, OpenZeppelin,
+  LayerZero blog) — incident facts are stable enough to summarize without follow-up search.

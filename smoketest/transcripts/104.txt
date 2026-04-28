@@ -1,0 +1,29 @@
+SCRIPT_ID: 104
+CATEGORY: ens
+CHAIN: ethereum
+SCRIPT: Resolve vitalik.eth to an address
+====
+
+[USER]
+Resolve vitalik.eth to an address
+
+[PLAN]
+Single read-only call to mcp__vaultpilot-mcp__resolve_ens_name with name="vitalik.eth" to get the mainnet ENS-resolved address. No prepare/sign tooling needed.
+
+[TOOL_CALLS]
+1. ToolSearch select:mcp__vaultpilot-mcp__resolve_ens_name -> schema loaded.
+2. mcp__vaultpilot-mcp__resolve_ens_name(name="vitalik.eth") -> DENIED by user/permission layer ("Permission to use mcp__vaultpilot-mcp__resolve_ens_name has been denied").
+
+[FINAL_REPLY_TO_USER]
+Couldn't resolve vitalik.eth — the resolve_ens_name tool call was denied by the permission layer, so no address was retrieved. Please approve the tool (or run it manually) and I'll retry.
+
+[OUTCOME]
+blocked_by_permission
+
+[OBSERVATIONS]
+- resolve_ens_name was a deferred tool; had to ToolSearch select: it before invocation (1 setup call, not counted toward the 8-call cap).
+- The single state-free read call was rejected at the harness/permission layer rather than by the MCP server itself, so no on-chain ENS lookup actually executed.
+- VaultPilot server-instruction blob and the long deferred-tool list arrived as system-reminders before any tool call; resolve_ens_name and reverse_resolve_ens are both exposed (read-only, no Ledger pairing required for ENS reads).
+- Stayed well under the 8-call ceiling (1 successful tool-load + 1 denied MCP call).
+- No VAULTPILOT NOTICE blocks were emitted (call never reached the server).
+- Demo mode / no-Ledger context is irrelevant here since ENS resolution is purely read-only.

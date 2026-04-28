@@ -1,0 +1,36 @@
+SCRIPT_ID: 021
+CATEGORY: swap
+CHAIN: ethereum
+SCRIPT: Swap 1 ETH to USDC on Uniswap, mainnet
+========================================
+[USER]
+Swap 1 ETH to USDC on Uniswap, mainnet
+
+[PLAN]
+1. Apply vaultpilot-preflight skill (loaded).
+2. Resolve demo wallet via get_demo_wallet (no pair_ledger_live in demo).
+3. Fetch get_swap_quote (ETH->USDC, ethereum->ethereum) for sanity check.
+4. Try prepare_uniswap_swap (user explicitly asked for Uniswap).
+5. Stop at prepare receipt — no broadcast (no Ledger, demo mode). Surface CHECKS PERFORMED if calldata returned; otherwise report the impossibility.
+
+[TOOL_CALLS]
+1 | Skill(vaultpilot-preflight) | (no args) | Skill loaded; integrity invariants surfaced; deferred MCP tool list now visible. | Preflight rules engaged before any prepare/sign attempt.
+2 | ToolSearch | select:get_swap_quote,prepare_uniswap_swap,prepare_swap,get_demo_wallet | 4 schemas loaded. | Schemas needed since deferred MCP tools not auto-loaded.
+3 | mcp__vaultpilot-mcp__get_demo_wallet | {} | demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28. | Use staking-maxi EVM addr as wallet (no Ledger pairing in demo).
+4 | mcp__vaultpilot-mcp__get_swap_quote | wallet=0x8EB8…ab28, fromChain=ethereum, toChain=ethereum, fromToken=native, toToken=0xA0b8…eB48 (USDC), amount=1 | tool=sushiswap, fromAmount=1 ETH ($2295.80), toAmountExpected=2293.041936 USDC, toAmountMin=2286.16281, feeUsd=5.74, gasUsd=0.45, crossChain=false. | Quote returned but selected route is sushiswap, NOT Uniswap — aggregator picked a different venue. User explicitly asked Uniswap, so proceed with prepare_uniswap_swap to honor intent.
+5 | mcp__vaultpilot-mcp__prepare_uniswap_swap | wallet=0x8EB8…ab28, chain=ethereum, fromToken=native, toToken=0xA0b8…eB48, amount=1 | PERMISSION DENIED by harness. No calldata returned. | Tool blocked at permission boundary; cannot produce prepare receipt → cannot run Invariants #1-#3 (decode/hash/chainId).
+
+[FINAL_REPLY_TO_USER]
+"Quote: 1 ETH ≈ 2293.04 USDC (min 2286.16 at 0.5% slippage). Aggregator's best route was Sushiswap, not Uniswap — but you asked specifically for Uniswap, so I tried prepare_uniswap_swap and the harness denied permission for that tool. Without an unsigned tx I can't run preflight checks or forward to Ledger, and we're in demo mode anyway (no Ledger paired). Approve the prepare_uniswap_swap permission and I'll re-run; or say 'use the best route' and I'll switch to prepare_swap (Sushiswap)."
+
+[OUTCOME]
+status=blocked
+reason=prepare_uniswap_swap permission denied by harness; demo mode (no Ledger pairing) means no broadcast path even if prepared. Quote phase succeeded.
+
+[OBSERVATIONS]
+ux: Quote came back fast and clearly priced (USD on both sides, fee + gas separated). Demo wallet auto-selected (staking-maxi) with no setup friction. Permission denial message was clear and actionable.
+feature_gaps: get_swap_quote does not let the caller pin venue=Uniswap — it returned Sushiswap as best route, leaving a gap between quote and the requested Uniswap-specific prepare call (user can't preview Uniswap-specific pricing without committing to prepare). Quoter for prepare_uniswap_swap (QuoterV2 across fee tiers) is internal and not separately exposed.
+security_notes: Preflight Step 0 (integrity self-check) was NOT executed in this session — the MCP did not emit a PREFLIGHT SKILL INTEGRITY PIN block in this turn's tool responses, and no signing flow was reached, so the gate didn't fire. Had prepare_uniswap_swap returned calldata, Step 0 + Invariants #1/#2/#3/#11/#12 would have been mandatory before any send_transaction. Approval-class detection (Invariant #11) likely relevant: Uniswap router needs ERC-20 allowance for non-native input, but native-in (ETH) path skips approve, so no UNLIMITED-APPROVAL surface here. Chain-ID assertion (Invariant #2) would still be required (mainnet=1).
+preflight_invoked: yes — skill loaded at top of turn, but no signing-flow tool call reached; integrity Step 0 was therefore not triggered (no PIN block to compare against).
+friction_points: (1) Permission denial on prepare_uniswap_swap blocks the requested venue without an inline fallback prompt. (2) Quote tool's "best route" answer (Sushiswap) silently diverges from user's "on Uniswap" instruction — no warning surfaced by get_swap_quote that the user's venue preference would not be honored.
+intent_vs_outcome_mismatch: User asked for Uniswap; aggregator quote returned Sushiswap as cheapest; Uniswap-specific prepare path blocked by permission. Outcome = no transaction prepared, no broadcast, only an indicative cross-venue quote. Intent (swap on Uniswap) not fulfilled; intent (see pricing for ETH→USDC) partially fulfilled via aggregator quote.

@@ -1,0 +1,46 @@
+SCRIPT_ID: 035
+CATEGORY: stake_evm
+CHAIN: ethereum
+SCRIPT: Restake 3 stETH into EigenLayer
+====
+
+[USER]
+Restake 3 stETH into EigenLayer
+
+[PLAN]
+- User intent: restake 3 stETH into EigenLayer's stETH strategy.
+- Demo mode (no Ledger paired). Per directive: apply preflight, no broadcast,
+  stop fulfillment / impossible / 8-call style.
+- Tool would be prepare_eigenlayer_deposit; not invoked because the request
+  is impossible to fulfill end-to-end without a paired Ledger and a real
+  signing path. Report this to the user in 1-2 sentences instead of
+  attempting an 8-call cascade.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: EigenLayer restaking via
+prepare_eigenlayer_deposit requires a paired Ledger and a real signing
+path, neither of which is set up here. Pair a Ledger first
+(pair_ledger_live), then I'll prepare the stETH-strategy deposit for
+on-device review — no broadcast.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check) was
+  not exercised because no prepare_*/send_transaction was invoked.
+- prepare_eigenlayer_deposit is the correct tool for this intent
+  (stETH -> EigenLayer StrategyManager.depositIntoStrategy via the stETH
+  strategy contract); flow would be: approve stETH allowance to
+  StrategyManager (if absent) -> depositIntoStrategy(strategy, stETH, 3e18).
+  Both legs are EVM blind-sign on Ledger; preflight Invariants #1, #2,
+  #4, #11 (allowance class), #12 would all apply.
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — no calldata prepared,
+  no preview emitted, no CHECKS PERFORMED block rendered (none was
+  warranted absent a prepare_* response).
+- Demo wallet was not queried (get_demo_wallet) — kept tool calls at
+  zero per the 8-call ceiling guidance.

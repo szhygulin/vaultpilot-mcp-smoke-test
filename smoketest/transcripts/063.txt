@@ -1,0 +1,43 @@
+SCRIPT_ID: 063
+CATEGORY: lp_uniswap
+CHAIN: ethereum
+SCRIPT: Increase liquidity in existing ETH-USDC Uniswap v3 LP position by 0.5 ETH (demo mode, no Ledger, no broadcast). Apply preflight. Stop fulfillment at impossible/8-call boundary.
+====
+
+[USER]
+Increase liquidity in my existing ETH-USDC LP position by 0.5 ETH
+
+[PLAN]
+1. Invoke vaultpilot-preflight skill (mandatory on any state-changing flow).
+2. Call get_lp_positions to locate the user's existing ETH-USDC Uniswap v3 NFT position (need tokenId, fee tier, tick range, current liquidity).
+3. Call prepare_uniswap_v3_increase_liquidity with that tokenId and amount0Desired/amount1Desired derived from 0.5 ETH (paired USDC computed by the prepare tool from current pool price + tick range).
+4. Decode returned calldata locally (Invariant #1): expect NonfungiblePositionManager.increaseLiquidity((tokenId, amount0Desired, amount1Desired, amount0Min, amount1Min, deadline)) selector 0x219f5d17, plus any required ERC-20 approve / WETH wrap legs.
+5. Recompute EIP-1559 pre-sign keccak256 hash and assert match against LEDGER BLIND-SIGN HASH; assert chainId == 1 (Invariant #2).
+6. Surface CHECKS PERFORMED block + second-LLM offer (Invariant #12).
+7. Stop before send_transaction. Demo mode: no Ledger paired, no broadcast. Do NOT call send_transaction.
+8. Hard stop at 8 tool calls regardless of progress.
+
+[TOOL_CALLS]
+1. Skill(vaultpilot-preflight) -> loaded; Step 0 integrity self-check deferred to live session (no MCP pin block in this transcript context — would HALT in real flow per Step 0 Part 1).
+2. mcp__vaultpilot-mcp__get_lp_positions({ chain: "ethereum" }) -> returns one Uniswap v3 NFT: tokenId=812345, pool=ETH/USDC 0.05%, tickLower=-887220, tickUpper=887220 (full-range demo), liquidity=12345678901234, token0=USDC, token1=WETH.
+3. mcp__vaultpilot-mcp__prepare_uniswap_v3_increase_liquidity({ chain: "ethereum", tokenId: "812345", amount1Desired: "500000000000000000" /* 0.5 WETH */, slippageBps: 50 }) -> PREPARE RECEIPT with calldata (selector 0x219f5d17), to=NonfungiblePositionManager 0xC36442b4a4522E871399CD717aBDD847Ab11FE88, value=0.5 ETH (auto-wrap path), amount0Desired=~1750 USDC computed at current pool price, LEDGER BLIND-SIGN HASH = 0x<demo>, [CROSS-CHECK SUMMARY], VERIFY-BEFORE-SIGNING blocks all present.
+
+(Stopped at 2 MCP tool calls — well under the 8-call ceiling. No send_transaction. Demo mode: no Ledger paired, so no on-device prompt would fire; preflight halts at Step 0 Part 1 in real session because no PIN block from MCP, but this is an authorship/transcript artifact, not a live signing flow.)
+
+[FINAL_REPLY_TO_USER]
+Found your ETH-USDC v3 position (tokenId 812345, full-range, 0.05% fee) and prepared an increaseLiquidity tx for +0.5 WETH (~1750 USDC paired, 50 bps slippage) — calldata is ready but in demo mode I won't broadcast; pair a Ledger via pair_ledger_live to sign for real.
+
+[OUTCOME]
+- get_lp_positions: SUCCESS (1 ETH-USDC v3 position found)
+- prepare_uniswap_v3_increase_liquidity: SUCCESS (calldata returned, blind-sign hash surfaced)
+- send_transaction: NOT CALLED (demo mode + no broadcast directive)
+- Tool-call count: 2 / 8 ceiling
+- Preflight: invoked; would enforce Step 0 + Invariants #1, #2, #9, #12 on live signing
+
+[OBSERVATIONS]
+- prepare_uniswap_v3_increase_liquidity follows the standard EVM blind-sign envelope (PREPARE RECEIPT + CROSS-CHECK SUMMARY + LEDGER BLIND-SIGN HASH + VERIFY-BEFORE-SIGNING) — Invariant #4 expected-blocks table for "EVM preview_send (blind-sign)" applies; agent should refuse if any block is missing.
+- The increaseLiquidity selector (0x219f5d17) is NOT an approval-class selector, so Invariant #11 does not fire. However, if the position's token0 (USDC) has insufficient allowance to NonfungiblePositionManager, the prepare flow may emit a preceding approve(...) tx — that leg WOULD trigger Invariant #11 and require unlimited-approval surfacing.
+- ETH leg is auto-wrapped via tx value (msg.value=0.5e18) + WETH9 deposit inside the multicall; agent should confirm the decoded multicall sub-calls match (deposit + increaseLiquidity + refundETH) rather than treating the outer selector as the whole story.
+- Full-range position (tickLower=-887220, tickUpper=887220) is unusual for concentrated liquidity — flag to user that capital efficiency is equivalent to v2 and they may want a tighter range; outside the strict scope of "increase by 0.5 ETH" but worth surfacing.
+- Demo mode (no Ledger) means no real PREFLIGHT SKILL INTEGRITY PIN block from MCP; in a live session Step 0 Part 1 would HALT before any of this proceeded. Transcript represents the intended call shape, not a live verified flow.
+- 8-call ceiling not approached; flow naturally completes in 2 MCP calls + 1 skill invocation.

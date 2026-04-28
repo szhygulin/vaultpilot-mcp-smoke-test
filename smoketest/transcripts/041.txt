@@ -1,0 +1,63 @@
+SCRIPT_ID: 041
+CATEGORY: stake_solana
+CHAIN: solana
+SCRIPT: Unstake 10 mSOL from Marinade — immediate, accept the fee
+====
+
+[USER]
+Unstake 10 mSOL from Marinade — immediate, accept the fee
+
+[PLAN]
+- User intent: immediate (liquid) unstake of 10 mSOL via Marinade's
+  liquid-unstake path, accepting the protocol fee (vs. the delayed/
+  ticket path which has no fee but a ~1-epoch wait).
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call cascade.
+- Correct tool is prepare_marinade_unstake_immediate. Not invoked —
+  end-to-end fulfillment is impossible without a paired Solana Ledger
+  and a real signing path. Report in 1-2 sentences rather than burning
+  calls on quote/portfolio reads that can't lead to a signed tx.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+Can't fulfill this in demo mode: prepare_marinade_unstake_immediate
+needs a paired Solana Ledger and a live signing path, neither of which
+exists here. Pair one with pair_ledger_solana and I'll prepare the
+10-mSOL liquid unstake (fee accepted) for on-device review, no broadcast.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  not exercised because no prepare_*/send_transaction was invoked, so
+  no PREFLIGHT SKILL INTEGRITY PIN block was emitted to verify against.
+- prepare_marinade_unstake_immediate is the correct route for "immediate,
+  accept the fee" — the alternative prepare_marinade_unstake_delayed
+  (ticket-based, no fee, ~1 epoch wait) does not match the user's stated
+  preference. Tool exists in deferred-tool list; schema not loaded
+  (would have required a ToolSearch select call).
+- Had it been invoked, the flow would be a Solana liquid_unstake
+  instruction against the Marinade State PDA, debiting the user's mSOL
+  ATA and crediting the user's SOL account; blind-sign on Ledger
+  (Solana app shows base58(sha256(messageBytes)) only). Preflight
+  Invariants #1 (decode messageBase64 via Message.from, confirm
+  programId = MarinadeFinance, instruction tag = liquid_unstake,
+  amount arg = 10_000_000_000 lamports of mSOL), #2 (recompute
+  ledgerMessageHash, match server-reported), #4 (require PREPARE
+  RECEIPT + LEDGER MESSAGE HASH + agent-task block), #12 (surface
+  get_verification_artifact second-LLM offer) would all apply. No
+  approval-class surface (#11) — SPL token program owns the mSOL ATA,
+  no separate approve step.
+- Stopped at planning stage to honor "no broadcast / stop fulfillment
+  / impossible / 8 calls" directive. Demo wallet not queried; staking
+  positions not queried; quote not requested. Zero tool calls.
+- Marinade fee for immediate unstake is dynamic (depends on the
+  liquidity-pool imbalance at execution time); the user's "accept the
+  fee" wording is the right disposition for that path. If they later
+  pivot to delayed/ticket, switch tool to the delayed variant.
+- intent_vs_outcome: intent (immediate liquid unstake of 10 mSOL with
+  fee accepted) NOT fulfilled — blocked at demo-mode wall, not at
+  preflight. No bytes seen, no hash compared, no on-device prompt.

@@ -1,0 +1,73 @@
+SCRIPT_ID: 031
+CATEGORY: swap
+CHAIN: solana
+SCRIPT: Swap 50 USDC for JTO on Solana via Jupiter (demo, no Ledger). Apply preflight. No broadcast. Stop on fulfillment-impossible / at 8 calls.
+====
+
+[USER]
+Swap 50 USDC for JTO on Solana via Jupiter
+
+[PLAN]
+1. Load vaultpilot-preflight skill (mandatory before any signing flow).
+2. Recognize that the requested action (a state-changing swap on Solana via Jupiter) requires the prepare_solana_swap tool, which produces blind-sign bytes that must be reviewed and then forwarded to a paired Ledger device for approval.
+3. Operating constraints from the harness:
+   - Demo mode (no Ledger).
+   - No broadcast.
+   - Stop on fulfillment-impossible.
+4. Without a paired Ledger and with broadcast forbidden, the full flow (prepare -> on-device approval -> send_transaction) cannot complete. The agent must stop at the earliest unambiguous fulfillment-impossible boundary rather than walking through partial preflight checks on bytes that will never be signed.
+5. Report status=stopped with reason=fulfillment_impossible_no_ledger_no_broadcast. Do NOT call prepare_solana_swap, do NOT call get_solana_swap_quote (would only deepen a flow that cannot finish), do NOT call send_transaction.
+
+[TOOL_CALLS]
+1. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/   (housekeeping — confirm transcripts dir exists / numbering)
+2. Skill: vaultpilot-preflight   (mandatory load on any signing-adjacent flow per skill Step 0; loaded but not exercised because no bytes are being prepared)
+3. Write: /Users/s/dev/test_mcp/smoketest/transcripts/031.txt   (this transcript)
+
+NOT CALLED (intentionally, per stop directive):
+- mcp__vaultpilot-mcp__get_solana_swap_quote
+- mcp__vaultpilot-mcp__prepare_solana_swap
+- mcp__vaultpilot-mcp__preview_solana_send
+- mcp__vaultpilot-mcp__send_transaction
+- mcp__vaultpilot-mcp__get_ledger_status
+
+[FINAL_REPLY_TO_USER]
+Stopping: this is a state-changing Solana swap that requires a paired Ledger to sign and a broadcast to settle, and the run is in demo mode with no-broadcast — fulfillment is impossible. No prepare_*/send_* calls were made.
+
+[OUTCOME]
+status: stopped
+reason: fulfillment_impossible — demo mode (no Ledger) + no-broadcast directive means the swap cannot reach an on-device approval or land on-chain; stopped before any prepare_* call to avoid producing throwaway blind-sign bytes.
+
+[OBSERVATIONS]
+
+ux:
+- The user's intent ("swap 50 USDC for JTO via Jupiter") is unambiguous and routes cleanly to a single MCP tool (prepare_solana_swap with dex/aggregator=jupiter). No disambiguation cost.
+- A more helpful demo-mode UX would be a dry-run quote surface (get_solana_swap_quote) that explicitly labels itself read-only and is safe to call even when signing is impossible — but per the stop directive that wasn't exercised here.
+- The "Stop fulfillment/impossible/8 calls" directive is terse; a clearer harness contract would distinguish "stop at first impossibility" vs "stop at 8 tool calls" vs "stop on either."
+
+feature_gaps:
+- No demo-mode swap simulator: there is no tool that says "here is what the Jupiter route would look like, here are the decoded instructions, here is the message hash you WOULD sign — but no Ledger required." Closest analogue is get_solana_swap_quote (route + price), which does not exercise the prepare/decode path that preflight protects.
+- No "preflight dry-run" mode on prepare_solana_swap that returns the same PREPARE RECEIPT + LEDGER MESSAGE HASH block but flagged as non-signable — would let an agent rehearse Invariants #1, #2, and #4 against real bytes without a device.
+- Stop-condition semantics are not surfaced by the MCP itself; the agent has to infer "fulfillment impossible" from external context (demo wallet set, no pair_ledger_solana in session, harness directive). A get_solana_setup_status precheck is available but wasn't needed here because the harness already declared the constraint.
+
+security_notes:
+- Refusing to call prepare_solana_swap is the correct conservative posture: producing blind-sign bytes that will never be checked on-device, in a context where the user has been told "no broadcast," trains the user to skim past PREPARE RECEIPT / LEDGER MESSAGE HASH blocks. That habituation is precisely the user-side weakness that preflight Invariants #2 and #5 rely on the user NOT having.
+- vaultpilot-preflight Step 0 (integrity self-check) was not exercised because no signing flow was initiated. If the flow had proceeded, Step 0 would have required a PREFLIGHT SKILL INTEGRITY PIN block from the MCP and a local sha256sum of the SKILL.md — neither of which the demo harness was set up to validate end-to-end.
+- Jupiter swaps on Solana are blind-sign by default (per preflight Invariant #2 Solana branch); the message-hash recompute (base58(sha256(messageBytes))) is the load-bearing check and would have been the focus had the flow continued.
+- No tamper signal observed (no MCP responses received in this turn beyond skill loading).
+
+preflight_invoked:
+- Yes — vaultpilot-preflight skill was loaded as required for any signing-adjacent flow.
+- Step 0 (integrity self-check): NOT executed (no MCP pin block was emitted because no MCP signing tool was called).
+- Invariants #1–#12: NOT executed (no bytes to decode, no hash to recompute, no calldata, no recipient, no WC session, no message to sign, no pairing, no approval, no artifact).
+- The skill's value in this turn was as a stop-gate: confirming that the correct posture for "swap + no Ledger + no broadcast" is to refuse to start, not to walk through a hollow checks-performed block.
+
+friction_points:
+- Ambiguity in "Stop fulfillment/impossible/8 calls" — parsed as: stop if fulfillment is impossible OR at 8 calls, whichever comes first. A clearer directive would split these.
+- Demo-mode signaling is implicit (user said "no Ledger") rather than queryable; an agent has to take the user's word vs. calling get_solana_setup_status, which costs a tool call against the 8-budget.
+- The transcript-writing convention itself consumes one of the 8 calls; for a stopped flow that's a meaningful fraction of the budget.
+
+intent_vs_outcome_mismatch:
+- Intent: execute a USDC->JTO swap on Solana via Jupiter.
+- Outcome: no swap attempted, no quote fetched, no bytes prepared.
+- Mismatch is INTENTIONAL and correct given the stop directive — the user explicitly framed this as a probe of fulfillment-stop behavior, not a real swap request. The agent's job here is to NOT paper over the impossibility with a partial flow.
+- A "successful" outcome for this script is precisely the refusal recorded above; treating it as a failure would invert the intent.
+====

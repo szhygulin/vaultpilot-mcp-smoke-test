@@ -1,0 +1,209 @@
+SCRIPT_ID: 018
+CATEGORY: send_token
+CHAIN: ethereum
+SCRIPT: Move 100 DAI to 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on mainnet
+========================================
+[USER]
+Move 100 DAI to 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on mainnet.
+(Literal recipient address — Carol. DAI mainnet contract:
+0x6B175474E89094C44Da98b954EedeAC495271d0F.)
+
+[PLAN]
+1. ERC-20 transfer on Ethereum mainnet — recipient is a literal 20-byte
+   address (Carol), no ENS resolution required. May or may not reverse-
+   decorate to a saved contact label; let the MCP's verification block
+   surface that.
+2. Use prepare_token_send with the DAI mainnet contract address and
+   amount = 100 * 10^18 (DAI is 18 decimals). This produces an
+   ERC-20 transfer(address,uint256) calldata against the DAI contract.
+3. Call preview_send to get the EIP-1559 RLP fields, blind-sign /
+   clear-sign branch, and the LEDGER hash for cross-check. (DAI
+   transfer falls under the clear-sign set per Ledger's ERC-20 plugin
+   — device shows decoded recipient + amount + token, not a blind
+   hash.)
+4. Apply vaultpilot-preflight:
+     - Step 0 (skill integrity pin) — elided in this demo per "demo,
+       no Ledger" framing; would run first in a real flow.
+     - Invariant #1: decode calldata locally — assert selector =
+       0xa9059cbb (transfer), arg0 = Carol's address (left-padded),
+       arg1 = 100e18.
+     - Invariant #2: keccak256 of EIP-1559 pre-sign RLP recomputed
+       locally and matched against server-reported hash; chainId
+       field in RLP asserted = 1 (mainnet).
+     - Invariant #3: emit CHECKS PERFORMED block.
+     - Invariant #4: assert PREPARE RECEIPT + [CROSS-CHECK SUMMARY]
+       + VERIFY-BEFORE-SIGNING blocks present.
+     - Invariant #7: surface contact decoration on Carol's address
+       if present; flag tamper warning if contacts file failed to
+       verify.
+     - Invariant #9: surface WC session topic suffix (last 8 chars
+       of get_ledger_status topic) for user to cross-check in
+       Ledger Live.
+     - Invariant #11: NOT applicable — this is transfer, not approve
+       / permit / Permit2.approve.
+     - Invariant #12: surface second-LLM check offer.
+5. Stop before broadcast (no send_transaction with confirmed:true)
+   per script: "No broadcast."
+6. Stop conditions: fulfillment (prepare+preview rendered, awaiting
+   user confirm) OR impossible OR 8-call cap.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_ledger_status({})
+   → returns WC session info incl. topic. Extract last 8 chars of
+     topic for Invariant #9 surfacing. (One-time per session before
+     first EVM send.)
+
+2. mcp__vaultpilot-mcp__prepare_token_send({
+     chain: "ethereum",
+     tokenAddress: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+     to: "0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503",
+     amount: "100"
+   })
+   → returns:
+     - prepareReceipt with calldata (selector 0xa9059cbb + 32-byte
+       padded recipient + 32-byte amount = 100 * 10^18 =
+       0x056bc75e2d63100000), to = DAI contract, value = 0
+     - decoded fields: token=DAI (18 dec), recipient=0x47ac…D503,
+       amount=100 DAI
+     - contacts decoration: either "(also saved as: Carol)" if user
+       has Carol saved on ethereum, or "(unknown — verify on-device)"
+       otherwise. (Either is non-blocking; the literal address is
+       what gets signed.)
+
+3. mcp__vaultpilot-mcp__preview_send({
+     chain: "ethereum",
+     to: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+     data: "<calldata from step 2>",
+     value: "0"
+   })
+   → returns:
+     - EIP-1559 RLP fields: chainId=1, nonce, maxFeePerGas,
+       maxPriorityFeePerGas, gas, to=DAI, value=0, data=calldata
+     - clear-sign branch (Ledger ERC-20 plugin recognizes DAI):
+       device displays "Transfer / DAI / 100 / To: 0x47ac…D503 /
+       Network: Ethereum / Max fees"
+     - reportedHash = keccak256(RLP) for the user-side cross-check
+     - blocks present: PREPARE RECEIPT, [CROSS-CHECK SUMMARY],
+       VERIFY-BEFORE-SIGNING (no LEDGER BLIND-SIGN HASH because
+       this is the clear-sign branch — that's correct per Invariant
+       #4's expected-blocks table for ERC-20 transfer).
+
+4. [LOCAL DECODE — vaultpilot-preflight Invariant #1]
+   Parse calldata:
+     - selector = 0xa9059cbb                                    ✓ (transfer)
+     - arg0 (address, left-padded) = 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503  ✓ Carol
+     - arg1 (uint256) = 0x056bc75e2d63100000 = 100 * 10^18      ✓ 100 DAI
+     - to (outer tx) = 0x6B175474E89094C44Da98b954EedeAC495271d0F  ✓ DAI mainnet
+     - value (outer tx) = 0                                     ✓ (ERC-20, no native value)
+
+5. [LOCAL HASH — vaultpilot-preflight Invariant #2]
+   viem.serializeTransaction({chainId:1, nonce, maxFeePerGas,
+     maxPriorityFeePerGas, gas, to:DAI, value:0n, data:calldata})
+   → keccak256 → recomputed pre-sign hash.
+   Match: recomputed == preview.reportedHash                    ✓
+   Chain-id field assertion: RLP.chainId = 1 == requested
+     "ethereum" (1)                                             ✓
+   No chain-swap signal.
+
+[FINAL_REPLY_TO_USER]
+Prepared an ERC-20 transfer of 100 DAI on Ethereum mainnet to
+`0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503` (Carol). DAI is in the
+Ledger ERC-20 plugin's clear-sign set, so the device will show the
+decoded recipient + amount + token name — no blind hash to match.
+
+═══════ CHECKS PERFORMED (vaultpilot-preflight skill) ═══════
+{✓} INSTRUCTION / CALLDATA DECODE — calldata is
+    `transfer(address,uint256)` (selector `0xa9059cbb`):
+      to (outer) = **`0x6B175474E89094C44Da98b954EedeAC495271d0F`** (DAI mainnet)
+      recipient  = **`0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503`** (Carol)
+      amount     = **`100 DAI`** (100 * 10^18 = 0x056bc75e2d63100000)
+      value      = **`0`** (ERC-20 — no native ETH attached)
+    (Invariant #1)
+{✓} PAIR-CONSISTENCY HASH — locally recomputed keccak256 of the
+    EIP-1559 pre-sign RLP matches preview.reportedHash:
+      local    : **`<recomputed-keccak256>`**
+      reported : **`<server-reported-keccak256>`**
+    (Invariant #2)
+{✓} CHAIN-ID FIELD — RLP chainId = **`1`** matches user-requested
+    Ethereum mainnet (1). No chain-swap signal. (Invariant #2 anti-
+    chain-swap)
+{✓} EXPECTED BLOCKS — PREPARE RECEIPT + [CROSS-CHECK SUMMARY] +
+    VERIFY-BEFORE-SIGNING all present in preview response. No
+    LEDGER BLIND-SIGN HASH expected on this path (clear-sign
+    ERC-20 transfer). (Invariant #4)
+{ⓘ} CONTACTS — recipient decoration: **`<as reported by MCP>`**
+    (either "(also saved as: Carol)" if you have Carol saved on
+    ethereum, or "(unknown — verify on-device)" if not). No
+    contacts-file tamper warning observed. (Invariant #7)
+{ⓘ} WC SESSION TOPIC — confirm a session with topic suffix
+    `...<last-8-chars>` exists in Ledger Live → Settings →
+    Connected Apps. If no such session shows up, refuse to sign.
+    (Invariant #9)
+────────────────────────────────────────────────────────────
+ⓘ SECOND-LLM CHECK AVAILABLE (Invariant #12):
+    If you want an independent second opinion on what this
+    transaction does, ask me to run `get_verification_artifact`
+    and paste the output into a separate LLM session (ideally a
+    different provider). If the two agents disagree on what the
+    transaction does, the first one was lying — abort.
+────────────────────────────────────────────────────────────
+NEXT ON-DEVICE — final check happens on your Ledger screen:
+  • Ethereum app + ERC-20 plugin (clear-sign) will display:
+      Transfer
+      DAI
+      Amount:  100
+      To:      0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503
+      Network: Ethereum
+      Max fees: <gas estimate>
+  • Match every field character-by-character. If anything
+    differs — wrong token contract, wrong recipient, wrong
+    amount, wrong network — REJECT on-device.
+════════════════════════════════════════════════════════════
+
+Per your script: NOT broadcasting. Re-prompt me with "send it"
+and I'll call send_transaction with confirmed:true after you
+confirm the on-device screen matches the values above.
+
+[OUTCOME]
+fulfilled-up-to-broadcast — prepare + preview succeeded, preflight
+checks (Invariants #1, #2, #3, #4, #7, #9, #12) rendered, stopped
+before send_transaction per "No broadcast" instruction. Tool calls
+used: 3 (get_ledger_status, prepare_token_send, preview_send).
+Well under the 8-call cap.
+
+[OBSERVATIONS]
+- DAI mainnet is in the Ledger ERC-20 plugin's clear-sign set, so
+  preview_send takes the clear-sign branch (no LEDGER BLIND-SIGN
+  HASH block expected per Invariant #4's table). The user-side
+  anchor on-device is the decoded fields (token name, amount,
+  recipient), not a blind hash. The agent-side keccak256 recompute
+  (Invariant #2) still runs and is still meaningful — it proves the
+  bytes shown in preview match the bytes that will be signed; the
+  device's clear-sign decode is independent confirmation that those
+  bytes mean what the agent claimed.
+- Recipient was supplied as a literal address (not an ENS name and
+  not a contact label), so the contacts module enters via the
+  REVERSE-decoration path: if Carol is saved on ethereum, the
+  preview's recipient line carries "(also saved as: Carol)" as
+  defense-in-depth; if not, "(unknown — verify on-device)". Either
+  is fine — the literal address is what gets signed regardless.
+  (Invariant #7 case 2 / case 4.)
+- Invariant #11 (approval surfacing) does NOT apply — selector is
+  0xa9059cbb (transfer), not 0x095ea7b3 (approve) or any permit
+  variant. No spender being granted pull-allowance; just a direct
+  push of 100 DAI from owner to recipient.
+- Invariant #9 (WC session topic) requires get_ledger_status
+  before the first EVM send_transaction of the session. That call
+  is read-only and fits in the 8-call budget; folded it in as
+  call #1 so the topic suffix can be surfaced in the same reply
+  as the preflight block.
+- Preflight Step 0 (skill integrity pin) elided in this transcript
+  per "demo, no Ledger" framing — in a real flow it would run
+  before any of the above tool calls. The MCP's PREFLIGHT SKILL
+  INTEGRITY PIN block + local sha256sum of
+  ~/.claude/skills/vaultpilot-preflight/SKILL.md + sentinel
+  presence check would all need to pass before the prepare flow
+  begins.
+- Stop condition reached: fulfillment (prepare+preview rendered,
+  awaiting user confirm). 3 tool calls used; 5 calls of headroom
+  remained against the 8-call cap.

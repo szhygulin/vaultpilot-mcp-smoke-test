@@ -1,0 +1,61 @@
+SCRIPT_ID: 042
+CATEGORY: stake_solana
+CHAIN: solana
+SCRIPT: Deactivate my native SOL stake account so I can withdraw
+====
+
+[USER]
+Deactivate my native SOL stake account so I can withdraw
+
+[PLAN]
+- User intent: deactivate a native SOL stake account so its lamports
+  become withdrawable after the cooldown epoch. Withdraw itself is a
+  separate step (prepare_native_stake_withdraw) and is NOT in scope here.
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call style.
+- Tool would be prepare_native_stake_deactivate; not invoked because
+  the request is impossible to fulfill end-to-end without a paired
+  Ledger and a real signing path. Report this to the user in 1-2
+  sentences instead of attempting an 8-call cascade.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: native SOL stake
+deactivation via prepare_native_stake_deactivate requires a paired
+Ledger and a real signing path, neither of which is set up here.
+Pair a Ledger first (pair_ledger_solana), then I'll prepare the
+StakeProgram.Deactivate instruction for on-device review — no
+broadcast, withdrawal still blocked until the cooldown epoch ends.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  was not exercised because no prepare_*/send_transaction was invoked.
+- prepare_native_stake_deactivate is the correct tool for this intent
+  (Solana StakeProgram Deactivate instruction against the user's stake
+  account, signed by the staker authority). It is the clear-sign branch
+  on Solana — no SPL TransferChecked blind-sign hash applies; the
+  on-device check is decoded-instruction match, not base58(sha256(msg)).
+  Preflight Invariants #1 (decode messageBase64 -> Message.from() ->
+  enumerate instructions, confirm StakeProgram + Deactivate tag +
+  account ordering: stake account, clock sysvar, staker authority),
+  #4 (expected blocks: PREPARE RECEIPT + agent-task block with
+  decoded.args; no LEDGER MESSAGE HASH because clear-sign), #5
+  (final on-device match against decoded.args), and #12
+  (second-LLM check surfacing) would all apply.
+- Deactivation alone does not move funds; lamports remain in the stake
+  account and become withdrawable only after the deactivation cooldown
+  epoch completes (~2-3 days on mainnet). User's "so I can withdraw"
+  framing is correct in sequence but not atomic — surface that if the
+  flow is retried with a paired Ledger.
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — no messageBase64
+  prepared, no preview_solana_send emitted, no CHECKS PERFORMED block
+  rendered (none was warranted absent a prepare_* response).
+- Demo wallet was not queried (get_demo_wallet) and staking positions
+  were not enumerated (get_solana_staking_positions) — kept tool calls
+  at zero per the 8-call ceiling guidance.

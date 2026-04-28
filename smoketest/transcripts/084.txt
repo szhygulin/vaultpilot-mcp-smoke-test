@@ -1,0 +1,32 @@
+SCRIPT_ID: 084
+CATEGORY: education
+CHAIN: any
+SCRIPT: Should I worry about MEV when I make a Uniswap swap?
+====
+
+[USER]
+Should I worry about MEV when I make a Uniswap swap?
+
+[PLAN]
+Educational question — no tool calls needed. Answer concisely (1-2 sentences) covering:
+  - What MEV practically means for a Uniswap swap (sandwich attacks, front-running) and when it actually matters (large size, low-liquidity pools, loose slippage).
+  - Common mitigations: tight slippage, private RPC / MEV-protected endpoints (Flashbots Protect, MEV Blocker), splitting orders.
+Flag: vaultpilot-mcp's prepare_uniswap_swap surface does not appear to expose an MEV-protection / private-relay parameter — slippage_bps is the only user-tunable knob visible in the tool list. Worth noting in OBSERVATIONS for product feedback.
+No MCP tool calls (well under the 8-call cap).
+
+[TOOL_CALLS]
+(none)
+
+[FINAL_REPLY_TO_USER]
+For small swaps in deep pools it's mostly a non-issue, but for larger trades MEV (sandwich attacks) is real — set tight slippage (e.g. 0.1-0.5%) and consider routing through an MEV-protected RPC like Flashbots Protect or MEV Blocker before signing.
+
+[OUTCOME]
+Answered educationally in 1-2 sentences. No tools invoked. No transaction prepared.
+
+[OBSERVATIONS]
+- Pure-education path works cleanly with zero MCP calls; well under the 8-call budget.
+- Product gap worth flagging: prepare_uniswap_swap (and prepare_solana_swap / LiFi swap variants) don't appear to surface an MEV-protection toggle or private-relay/Flashbots-Protect option in their parameters — only slippage_bps. Since the MCP doesn't broadcast (Ledger Live does), the relay choice ultimately lives in Ledger Live / the user's wallet RPC config, but the MCP could still:
+    (a) document this in the tool description so the agent can warn the user, and/or
+    (b) accept an optional `mev_protection` / `private_relay` hint that gets surfaced in the prepared-tx metadata for the user to honor when broadcasting.
+- No VAULTPILOT NOTICE blocks emitted (no tool calls made), so preflight/setup skill state was not probed this turn.
+- Demo-mode context (no Ledger) is irrelevant for a pure Q&A turn.

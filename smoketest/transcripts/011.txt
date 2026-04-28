@@ -1,0 +1,41 @@
+SCRIPT_ID: 011
+CATEGORY: send_token
+CHAIN: ethereum
+SCRIPT: Send 1000 USDC to Carol on Ethereum
+========================================
+[USER]
+Send 1000 USDC to Carol on Ethereum
+
+[PLAN]
+USDC is an ERC-20 (clear-sign on Ledger Ethereum app), recipient Carol resolves to literal 0x47ac...D503 since add_contact failed with CONTACTS_LEDGER_NOT_PAIRED. Sender "my wallet" not specified — pick a demo persona that isn't a named contact (impossible: all four collide), so default to set_demo_wallet then prepare_token_send for USDC (0xA0b8...eB48 on mainnet) -> preview_send to surface calldata + EIP-1559 hash. Run preflight invariants on the receipt; do NOT call send_transaction with confirmed:true (no real Ledger).
+
+[TOOL_CALLS]
+1. get_demo_wallet | args: {} | result: demoActive=true, mode=default, active=null; matrix lists whale(Alice)=0xd8dA...6045, defi-degen(Bob)=0x176F...a132, stable-saver(Carol)=0x47ac...D503, staking-maxi(Dave)=0x8EB8...ab28 | takeaway: No active persona — every demo EVM address collides with a named contact; Carol is both the recipient AND the stable-saver persona.
+2. get_ledger_status | args: {} | result: PERMISSION DENIED by harness | takeaway: WC session topic (Invariant #9) unreachable — even if a prepare succeeded, send_transaction would be refused on missing-topic grounds.
+3. list_contacts | args: {chain:"evm"} | result: PERMISSION DENIED by harness | takeaway: Cannot confirm/reverse-decorate Carol's literal address; falling back to user-supplied address per script instructions.
+4. set_demo_wallet | args: {persona:"staking-maxi"} | result: ok=true, mode=live, evm=0x8EB8...ab28 | takeaway: Chose Dave's persona as sender by elimination (Carol is recipient, Alice/Bob arbitrary). Guess; should be user-confirmed.
+5. prepare_token_send | args: {wallet:0x8EB8...ab28, to:0x47ac...D503, token:"USDC", amount:"1000", chain:"ethereum"} | result: PERMISSION DENIED by harness | takeaway: Cannot produce calldata or PREPARE RECEIPT; signing flow is fully blocked at the first state-shaping call.
+6. preview_send | args: {handle:"<would-be from prepare_token_send>"} | result: SKIPPED — no handle from step 5 | takeaway: No LEDGER message hash, no decoded transfer(address,uint256), no [CROSS-CHECK SUMMARY] block to verify.
+
+[FINAL_REPLY_TO_USER]
+I can't complete this send. Three blockers, in order of severity:
+
+1. No paired Ledger. add_contact failed earlier with CONTACTS_LEDGER_NOT_PAIRED, get_ledger_status was denied, and demo mode shows active=null until I forced a persona. VaultPilot is self-custodial — without a paired Ledger there is no key to sign with.
+2. prepare_token_send was denied by the harness, so I have no calldata, no decoded transfer(0x47ac...D503, 1000000000) payload, and no EIP-1559 pre-sign hash for you to verify. Nothing reaches a Ledger screen and the preflight invariants (decode → recompute hash → chainId match) cannot be exercised.
+3. Sender ambiguity. "Carol" is unambiguously the recipient at 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503, but "my wallet" wasn't specified, and every demo EVM persona doubles as a named contact (whale=Alice, defi-degen=Bob, stable-saver=Carol, staking-maxi=Dave). I tentatively picked staking-maxi (Dave) by elimination, but this is a guess.
+
+To proceed you'd need to: (a) pair your Ledger via pair_ledger_live and verify the on-device address character-by-character (Invariant #10); (b) tell me which wallet is the sender; (c) re-allow prepare_token_send / preview_send. Then I'd surface PREPARE RECEIPT + decoded ERC-20 transfer + EIP-1559 hash, you'd match it on the Ledger Ethereum app's clear-sign screen (it should display "Transfer 1000 USDC to 0x47ac...D503"), and only then would I call send_transaction { confirmed: true }.
+
+If you want an independent second opinion on the eventual prepared tx, ask me to run get_verification_artifact and paste the output into a separate LLM session (ideally a different provider). If the two agents disagree on what the transaction does, the first one was lying — abort.
+
+[OUTCOME]
+status: blocked
+reason: No paired Ledger (CONTACTS_LEDGER_NOT_PAIRED carryover, demo active=null) and harness denied prepare_token_send + get_ledger_status + list_contacts, so no calldata, no PREPARE RECEIPT, and no LEDGER hash were produced. send_transaction was never called.
+
+[OBSERVATIONS]
+- ux: Three layers of "no" (no Ledger, no contacts, denied prepare) means the user gets a wall of caveats instead of a tx. The 1000 USDC ask is concrete and the recipient address resolves cleanly; the friction is entirely on the signing-stack side. A demo-mode dry-run that emits unsigned calldata + decoded fields without attempting Ledger comms would close this gap.
+- feature_gaps: (a) No "review-only" / dry-run mode for prepare_token_send — the user can't inspect what the calldata would look like without a paired Ledger. (b) Demo persona namespace collides 1:1 with the seeded contacts, making "my wallet" unresolvable from context. (c) USDC token resolution is implicit ("USDC" → 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 mainnet); a compromised MCP could ship calldata pointing at a look-alike token contract — Invariant #1 would catch the bytes mismatch but only if the prepare receipt actually returns. (d) add_contact's CONTACTS_LEDGER_NOT_PAIRED error doesn't link forward to pair_ledger_live, so Carol's label has no signature-verified path even after a future pairing.
+- security_notes: Did NOT call send_transaction. Did NOT set confirmed:true. Preflight Step 0 (skill integrity pin) not triggered because no prepare/preview response was returned — no MCP-emitted PREFLIGHT SKILL INTEGRITY PIN to verify against. CHECKS PERFORMED block intentionally not emitted (no bytes to decode → nothing to checkmark or fail). Address-book reverse-decoration (Invariant #7) is degraded: Carol's literal 0x47ac...D503 cannot be cross-checked against a signed contacts blob, so the user must verify the address out-of-band. Invariant #11 (approval-class surfacing) not applicable — transfer, not approve.
+- preflight_invoked: yes (skill loaded; halted before any signing-flow invariants ran because no prepare receipt was produced — Step 0 + Invariants #1-#9 await a real preview_send response)
+- friction_points: (1) Three permission denials (get_ledger_status, list_contacts, prepare_token_send) make the harness sandbox indistinguishable from MCP-side errors; clearer error taxonomy would help. (2) Sender disambiguation is forced through set_demo_wallet guessing rather than a "self" alias. (3) USDC token symbol → contract address resolution happens inside prepare_token_send and is therefore untestable in this denied state.
+- intent_vs_outcome_mismatch: no — user asked for a 1000 USDC send; agent correctly identified that without a Ledger and without prepare_* permissions there is no safe path forward and stopped before any state-changing call. Outcome aligns with VaultPilot's self-custodial guarantee and the preflight skill's "halt before signing on any uncertainty" stance.

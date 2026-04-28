@@ -1,0 +1,40 @@
+SCRIPT_ID: 037
+CATEGORY: stake_evm
+CHAIN: ethereum
+SCRIPT: Deposit 32 ETH into native ETH staking (solo validator)
+====
+
+[USER]
+Deposit 32 ETH into native ETH staking (solo validator)
+
+[PLAN]
+1. Apply vaultpilot-preflight skill (Step 0 integrity self-check would fire on any signing flow; this request never reaches a signing flow, so the bytes-level invariants #1-12 don't activate — they're scoped to prepare_* / preview_* / send_transaction / pair_ledger_* / sign_message_*).
+2. Survey vaultpilot-mcp surface for any tool that builds a Beacon Deposit Contract call (deposit(pubkey, withdrawal_credentials, signature, deposit_data_root) on 0x00000000219ab540356cBB839Cbe05303d7705Fa).
+3. Specifically check whether any prepare_* flow accepts a deposit data file (the JSON output of staking-deposit-cli containing validator pubkey + BLS12-381 signature + withdrawal credentials + deposit_data_root) — that file is the prerequisite for any solo-validator activation tx and is generated off-chain by the user's validator setup tooling, not by an MCP server.
+4. Determine fulfillment: NO matching tool exists. Stop fulfillment. Do not invent a substitute (Lido stETH and EigenLayer deposit are categorically different products — liquid staking and restaking respectively, not solo validator activation).
+
+[TOOL_CALLS]
+None. No prepare_*, preview_*, or send_transaction calls were issued. The decision was made entirely from the loaded tool surface (ToolSearch results + deferred tool list in the system reminder).
+
+Surveyed staking-adjacent tools and their fit verdicts:
+  - prepare_lido_stake — liquid staking via stETH.submit; produces stETH, NOT a solo validator. NO FIT.
+  - prepare_lido_unstake — withdrawal request from Lido queue. NO FIT.
+  - prepare_eigenlayer_deposit — StrategyManager.depositIntoStrategy; restaking layer on top of an ALREADY-active validator or LST. NO FIT for activation.
+  - prepare_jito_stake / prepare_marinade_stake / prepare_native_stake_delegate — Solana-side staking. Wrong chain.
+  - No prepare_eth_validator_deposit / prepare_beacon_deposit / prepare_native_validator_activation tool exists in the surface.
+  - No tool accepts a deposit_data.json file or its constituent fields (pubkey, withdrawal_credentials, signature, deposit_data_root) as input.
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this with the tools available — vaultpilot-mcp has no surface for activating a solo Ethereum validator (no Beacon Deposit Contract builder, no flow that ingests a deposit_data.json), and none of the present staking tools (prepare_lido_stake, prepare_eigenlayer_deposit) produce a solo validator. To run a solo validator you'd generate the deposit data with staking-deposit-cli, run a consensus + execution client pair, and submit the deposit transaction via a wallet that supports the Beacon Deposit Contract directly — that's outside this server's scope.
+
+[OUTCOME]
+NOT_FULFILLED — impossible with current tool surface. No transaction prepared, no bytes signed, no broadcast. Preflight signing invariants did not activate (out of scope: no signing flow occurred). Fulfillment stopped at tool-surface gap detection — well under the 8-call ceiling (zero tool calls issued for this request).
+
+[OBSERVATIONS]
+- Solo validator activation has two off-chain prerequisites the MCP cannot supply regardless of tooling: (a) a running consensus + execution client pair the validator will attest with, and (b) a deposit_data.json from staking-deposit-cli (or equivalent BLS keygen + signing). A prepare_* tool could in principle build the deposit() calldata if the user pasted in the four fields from deposit_data.json, but no such tool exists today.
+- Adjacent products in the surface map to different user intents:
+    * Lido (prepare_lido_stake): liquid staking, no validator ownership, no 32 ETH minimum.
+    * EigenLayer (prepare_eigenlayer_deposit): restaking on top of an LST or already-active native stake; not activation.
+    * SSV / Rocket Pool / Stakewise / Obol: no tools present — these would be the natural homes for a non-custodial-but-not-fully-solo path.
+- Honest "no" was the right move. Substituting prepare_lido_stake for "solo validator" would be a category error: stETH holders do not run validators, do not earn the validator-tier MEV / priority-fee share, and forfeit the slashing-risk / sovereignty profile the user explicitly asked for.
+- Reply length: 2 sentences as requested.

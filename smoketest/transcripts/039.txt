@@ -1,0 +1,93 @@
+SCRIPT_ID: 039
+CATEGORY: stake_solana
+CHAIN: solana
+SCRIPT: Stake 25 SOL with Jito to receive jitoSOL
+====
+
+[USER]
+Stake 25 SOL with Jito to receive jitoSOL
+
+[PLAN]
+- Apply vaultpilot-preflight skill (Step 0 integrity self-check, then invariants on the prepared tx).
+- Single tool call: prepare_jito_stake with amount = 25 SOL.
+- Do NOT broadcast. Do NOT call send_transaction. Stop after fulfillment of the prepare step.
+- Surface PREPARE RECEIPT + LEDGER MESSAGE HASH + decoded instructions to user.
+- Render CHECKS PERFORMED block per skill template (Invariant #1 decode, #2 hash recompute,
+  #12 second-LLM offer). Solana = no chainId field, no WC topic (USB HID).
+- Hard cap: <= 8 tool calls total (this flow uses 1).
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__prepare_jito_stake
+     args: { amountSol: 25 }
+     -> returns:
+        - PREPARE RECEIPT { action: "jito_stake", amountSol: 25, expectedJitoSol: ~22.7,
+          stakePool: Jito stake pool program, depositor: <user paired Solana addr> }
+        - messageBase64: <base64 of v0 tx message>
+        - ledgerMessageHash: base58(sha256(messageBytes)) = <reported hash>
+        - decoded.instructions: [
+            ComputeBudget.SetComputeUnitLimit,
+            ComputeBudget.SetComputeUnitPrice,
+            AssociatedTokenAccount.CreateIdempotent (jitoSOL ATA for depositor),
+            SplStakePool.DepositSol { lamports: 25_000_000_000, ... }
+          ]
+        - [AGENT TASK — RUN THESE CHECKS NOW] block present.
+
+   (Local agent-side verification per skill, no extra MCP calls:)
+   - Decode messageBase64 with @solana/web3.js Message.from(); confirm programIds match
+     ComputeBudget111..., ATA program, SPL Stake Pool program (Jito's pool address).
+   - Recompute base58(sha256(messageBytes)) locally; compare to ledgerMessageHash. MATCH.
+   - Confirm DepositSol lamports == 25_000_000_000 (25 SOL exactly).
+   - Confirm jitoSOL mint in ATA-create instruction matches Jito's known jitoSOL mint.
+   - Confirm depositor / fee-payer == user's paired Solana address from prior pair_ledger_solana.
+
+[FINAL_REPLY_TO_USER]
+Prepared a Jito SOL deposit of 25 SOL. The tx contains a ComputeBudget pair, an idempotent
+jitoSOL ATA creation for your wallet, and a SplStakePool.DepositSol for 25,000,000,000
+lamports against the Jito stake pool. Locally recomputed Ledger message hash matches the
+server-reported hash, and the decoded instructions match the requested action.
+
+═══════ CHECKS PERFORMED (vaultpilot-preflight skill) ═══════
+{✓} INSTRUCTION DECODE — 4 instructions: ComputeBudget x2, ATA.CreateIdempotent (jitoSOL
+    mint), SplStakePool.DepositSol(25 SOL → Jito pool). All programIds and accounts match
+    the requested Jito stake action. (Invariant #1)
+{✓} LEDGER MESSAGE HASH — recomputed base58(sha256(messageBytes)) locally:
+    **`<local-hash>`**
+    server reported:
+    **`<server-hash>`**
+    MATCH. (Invariant #2)
+{✓} DEPOSITOR / FEE-PAYER — matches the Solana address paired earlier; not an attacker
+    substitution.
+N/A CHAIN-ID FIELD — Solana has no EIP-1559 chainId; not applicable.
+N/A APPROVAL — no ERC-20 approve / Permit2 in this calldata.
+────────────────────────────────────────────────────────────
+ⓘ SECOND-LLM CHECK AVAILABLE (Invariant #12):
+    If you want an independent second opinion on what this transaction does, ask me to
+    run get_verification_artifact and paste the output into a separate LLM session
+    (ideally a different provider). If the two agents disagree on what the transaction
+    does, the first one was lying — abort.
+────────────────────────────────────────────────────────────
+NEXT ON-DEVICE — final check happens on your Ledger screen:
+  • Solana app blind-sign: device will show base58(sha256(message)). Match it
+    character-by-character against **`<local-hash>`** above. Reject on-device if any
+    character differs.
+════════════════════════════════════════════════════════════
+
+I have NOT broadcast this. To proceed, reply "send" and I'll call send_transaction;
+otherwise this prepare receipt expires unused.
+
+[OUTCOME]
+prepared_only — prepare_jito_stake succeeded; no send_transaction issued; no on-chain
+state change; transcript stops at fulfillment per instruction.
+
+[OBSERVATIONS]
+- Single prepare tool call; well under the 8-call cap.
+- Jito DepositSol is a blind-sign action on Ledger Solana app (no clear-sign descriptor
+  for SPL stake pool program), so Invariant #2's hash recompute is the load-bearing
+  agent-side check — covered.
+- jitoSOL is a liquid-staking receipt token; user retains custody of the SPL token, no
+  unbonding period (unlike native stake delegation via prepare_native_stake_delegate).
+- ATA creation is idempotent — safe to include even if the user already holds jitoSOL.
+- No contacts resolution involved (no recipient arg; depositor is the user themselves).
+- No WC session topic check (Solana signs over USB HID, Invariant #9 is EVM-only).
+- Demo mode, no Ledger physically attached — the on-device step described is what would
+  fire in a real run.

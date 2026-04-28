@@ -1,0 +1,43 @@
+SCRIPT_ID: 017
+CATEGORY: send_token
+CHAIN: tron
+SCRIPT: Send 200 USDT (TRC20) to Alice on Tron. Alice Tron: TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm. USDT-TRC20 contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t. Apply preflight. No broadcast. Stop on fulfillment-impossible. Cap at 8 tool calls.
+====
+
+[USER]
+Send 200 USDT (TRC20) to Alice on Tron.
+- Recipient (Alice): TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm
+- Token: USDT-TRC20 (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t)
+- Apply preflight skill.
+- No broadcast (demo, no Ledger).
+
+[PLAN]
+1. Recognize this is a state-changing TRON TRC-20 send → vaultpilot-preflight skill applies.
+2. Invoke vaultpilot-preflight skill (Step 0 mandatory before any signing-related action).
+3. Determine sender wallet — none provided by user, no `from` TRON address known to this session, no Ledger paired (demo, no Ledger).
+4. `prepare_tron_token_send` requires a `from` base58 T-address. Without a sender, the prepare call cannot be constructed in good faith.
+5. Pairing a Ledger to obtain a `from` address would require physical Ledger + TRON app open per `pair_ledger_tron` requirements — explicitly out of scope (demo, no Ledger).
+6. Stop fulfillment as IMPOSSIBLE in this demo configuration. Do not invent a sender address; do not call prepare_*; do not approach send_transaction.
+7. Write transcript 017 and reply 1–2 sentences.
+
+[TOOL_CALLS]
+1. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/ — confirm transcripts dir + existing IDs.
+2. ToolSearch: query "vaultpilot tron preflight" — load relevant TRON + preflight tool schemas (prepare_tron_token_send, prepare_tron_trc20_approve, pair_ledger_tron, get_tron_staking, list_tron_witnesses, prepare_tron_native_send, prepare_tron_lifi_swap, prepare_tron_freeze, prepare_tron_unfreeze, prepare_tron_vote, prepare_tron_claim_rewards, prepare_tron_withdraw_expire_unfreeze, get_vaultpilot_config_status, generate_readonly_link, share_strategy).
+3. Skill: vaultpilot-preflight — invoked per skill scope (TRON state-changing tool would have been involved).
+4. Write: /Users/s/dev/test_mcp/smoketest/transcripts/017.txt — this transcript.
+
+(4 of 8 budget used — well under cap.)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this in the current demo: no `from` TRON wallet is paired (no Ledger), so `prepare_tron_token_send` has no legitimate sender — pair a Ledger via `pair_ledger_tron` first, then I can build the unsigned 200 USDT TRC-20 transfer to Alice for on-device review. No prepare/broadcast attempted.
+
+[OUTCOME]
+fulfillment_impossible — stopped before any prepare_* or send_transaction call. Zero state-changing MCP calls issued. No bytes prepared, no Ledger pairing attempted, no broadcast.
+
+[OBSERVATIONS]
+- Preflight skill loaded successfully; Step 0 (integrity self-check) was not triggered because no prepare_*/send_transaction was made — skill's signing-flow invariants only apply once a state-changing tool is about to be called. Refusing on missing-sender grounds is upstream of that.
+- Correct call ordering would have been: (a) pair_ledger_tron → surface returned address with bold inline-code markup and ask user to character-match on-device (Invariant #10); (b) prepare_tron_token_send with from=<paired addr>, to=TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm, token=TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, amount="200"; (c) decode rawDataHex locally as TriggerSmartContract → transfer(address,uint256) selector 0xa9059cbb, recipient = Alice, amount = 200 * 10^6 = 200000000 (USDT decimals=6 from canonical table); (d) recompute on-device hash and emit CHECKS PERFORMED block; (e) Invariant #12 surfacing of get_verification_artifact offer; (f) send_transaction with confirmed:true only after on-device match.
+- Token contract TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t is canonical USDT-TRC20 — would clear-sign natively on Ledger TRON app per prepare_tron_token_send tool docs.
+- Default fee_limit would be 100 TRX (TronLink/Ledger Live standard) — no override needed for a plain transfer.
+- No contacts module lookup was attempted for Alice; in a fully-configured session, `add_contact` for Alice on TRON ahead of time would let the verify block decorate the recipient line with `(contact: Alice — verified)` per Invariant #7.
+- Tool-call budget: 4/8 used. Stayed well under the cap by refusing early instead of speculatively chaining pair_ledger_tron + prepare_*.

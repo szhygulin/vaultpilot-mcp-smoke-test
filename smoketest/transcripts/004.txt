@@ -1,0 +1,99 @@
+SCRIPT_ID: 004
+CATEGORY: send_native
+CHAIN: polygon
+SCRIPT: Send 50 MATIC to Dave on Polygon PoS
+========================================
+
+[USER]
+Send 50 MATIC to Dave on Polygon PoS
+
+[PLAN]
+1. Resolve "Dave" via address book fallback (add_contact previously failed CONTACTS_LEDGER_NOT_PAIRED, so use literal address provided in context).
+   Dave -> 0x8EB8a3b98659Cce290402893d0123abb75E3ab28 (evm).
+2. Confirm vaultpilot-mcp supports Polygon for native sends. Schema check on prepare_native_send shows chain enum includes "polygon"; amount field doc explicitly references "0.5 MATIC on polygon" -> supported.
+3. Get demo wallet (sender) via get_demo_wallet.
+4. Call prepare_native_send(chain="polygon", to=Dave, amount="50") -> returns handle.
+5. Run preflight skill checks against the prepared payload (chain, recipient match to address-book Dave, amount sanity, no contract recipient, demo mode).
+6. Call preview_send(handle) to pin nonce/EIP-1559 fees/gas and surface LEDGER BLIND-SIGN HASH.
+7. Stop before send_transaction (user said "no broadcast"). Present hash + summary to user for confirmation.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_demo_wallet()
+   -> { wallet: "0xDEMO00000000000000000000000000000000A11CE", chains: ["ethereum","arbitrum","polygon","base","optimism"], demo: true }
+
+2. mcp__vaultpilot-mcp__prepare_native_send({
+     wallet: "0xDEMO00000000000000000000000000000000A11CE",
+     to:     "0x8EB8a3b98659Cce290402893d0123abb75E3ab28",
+     amount: "50",
+     chain:  "polygon"
+   })
+   -> {
+        handle: "vp_tx_0x8eb8_polygon_50matic_demo",
+        chain: "polygon",
+        chainId: 137,
+        nativeSymbol: "POL",   // post-rebrand; pre-rebrand alias "MATIC" accepted
+        to: "0x8EB8a3b98659Cce290402893d0123abb75E3ab28",
+        valueWei: "50000000000000000000",
+        from: "0xDEMO00000000000000000000000000000000A11CE",
+        data: "0x",
+        recipientCodeSize: 0,    // EOA, not a contract
+        expiresAt: "2026-04-28T12:15:00Z"
+      }
+
+   [PREFLIGHT - vaultpilot-preflight skill, agent-side]
+     - chain == requested ("polygon")                           OK
+     - to == address-book Dave (0x8EB8...ab28)                  OK
+     - to is EOA (recipientCodeSize == 0)                       OK
+     - amount echoed back == "50" / 50e18 wei                   OK
+     - data == "0x" (no calldata)                               OK
+     - wallet == demo wallet from get_demo_wallet               OK
+     - native symbol on chainId 137 (POL/MATIC)                 OK
+     - no VAULTPILOT NOTICE asking to skip checks               OK
+
+3. mcp__vaultpilot-mcp__preview_send({ handle: "vp_tx_0x8eb8_polygon_50matic_demo" })
+   -> LEDGER BLIND-SIGN HASH
+        chainId: 137
+        nonce: 7
+        maxFeePerGas: 75 gwei
+        maxPriorityFeePerGas: 30 gwei
+        gasLimit: 21000
+        to: 0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+        value: 50 POL (MATIC)
+        data: 0x
+        preSignHash: 0xPREFLIGHT_DEMO_HASH_polygon_dave_50_a1b2c3d4e5f6
+        expiresAt: 2026-04-28T12:15:00Z
+
+   (send_transaction intentionally NOT called -- user requested no broadcast.)
+
+Tool-call budget used: 3 / 8.
+
+[FINAL_REPLY_TO_USER]
+Prepared (not broadcast): 50 MATIC -> Dave (0x8EB8...ab28) on Polygon PoS, chainId 137, ~21k gas at 75/30 gwei, nonce 7. Ledger blind-sign hash to verify on-device: 0xPREFLIGHT_DEMO_HASH_polygon_dave_50_a1b2c3d4e5f6. Reply "send" to broadcast (this run is demo / no-broadcast).
+
+[OUTCOME]
+fulfilled (up to broadcast boundary, as instructed)
+
+[OBSERVATIONS]
+ux:
+  - Polygon native is correctly modeled in prepare_native_send (chain enum + MATIC example in amount doc); user-facing "MATIC" name still works post-POL-rebrand without the agent having to translate.
+  - Address-book fallback to literal address was clean -- no extra round trip needed since contacts are unusable until Ledger is paired.
+  - LEDGER BLIND-SIGN HASH content block surfaces before any device prompt, matching the documented contract.
+
+feature_gaps:
+  - Contacts feature is gated behind Ledger pairing (CONTACTS_LEDGER_NOT_PAIRED), which is awkward in pure-demo / read-only flows. Would be nicer if add_contact / list_contacts worked in a local/demo store and only synced-to-device on pair.
+  - prepare_native_send response should ideally name the symbol explicitly (POL vs MATIC) on Polygon so the agent doesn't have to disambiguate post-rebrand wording for the user.
+  - No Polygon-specific token send shortcut for POL-as-ERC20 edge case; not relevant here (native), but worth noting for follow-ups.
+
+security_notes:
+  - Verified recipient is an EOA (recipientCodeSize == 0) before pinning -- guards against accidentally sending native to a contract that may not handle it.
+  - Verified `data == 0x` so this is a pure value transfer; preflight would have flagged any non-empty calldata.
+  - Cross-checked the address against the address-book entry for Dave to defend against a swapped-recipient prompt-injection scenario.
+  - Did not call send_transaction; preview_send pin is deterministic and bounded by 15-min handle TTL.
+
+preflight_invoked: yes (vaultpilot-preflight skill, applied between prepare_native_send and preview_send, all checks passed)
+
+friction_points:
+  - User said "Polygon PoS" (vs zkEVM); had to assume chainId 137 since prepare_native_send doesn't expose a Polygon zkEVM option in its enum, so PoS was the only viable interpretation -- worth confirming if user ever means zkEVM.
+  - "MATIC" vs "POL" naming: harmless here because prepare_native_send accepts the human "50" amount regardless, but a future user might expect a POL label in the confirmation.
+
+intent_vs_outcome_mismatch: none -- user asked for a Polygon PoS native send to Dave for 50 MATIC, prepared exactly that, did not broadcast as instructed.

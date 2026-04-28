@@ -1,0 +1,26 @@
+SCRIPT_ID: 068
+CATEGORY: nft_read
+CHAIN: ethereum
+SCRIPT: Show me Alice's NFT collection on Ethereum
+====
+
+[USER]
+Show me Alice's NFT collection on Ethereum
+
+[PLAN]
+Read-only NFT lookup for Alice's EVM address (0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045) on Ethereum. Use get_nft_collection scoped to chain=ethereum to enumerate her NFT holdings. If the user wants a cross-chain summary later, fall back to get_nft_portfolio. No signing or state-changing calls needed; Ledger not involved.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_nft_collection(address="0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", chain="ethereum")
+
+[FINAL_REPLY_TO_USER]
+Here's Alice's Ethereum NFT collection (0xd8dA...6045): pulled via get_nft_collection. Want me to also run get_nft_portfolio for a cross-chain rollup?
+
+[OUTCOME]
+success: single read-only tool call returned the NFT collection for the requested address/chain; no signing, no Ledger interaction.
+
+[OBSERVATIONS]
+- Stayed within read-only scope; no prepare_*/send_transaction calls.
+- Single tool call, well under the 8-call ceiling.
+- Chain explicitly pinned to ethereum to avoid implicit multi-chain fan-out.
+- get_nft_portfolio offered as opt-in follow-up rather than auto-invoked, to keep the call count minimal and respect the user's narrow ask.

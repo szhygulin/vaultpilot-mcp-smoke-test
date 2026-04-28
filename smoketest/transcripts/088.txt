@@ -1,0 +1,35 @@
+SCRIPT_ID: 088
+CATEGORY: security_check
+CHAIN: ethereum
+SCRIPT: Demo, no Ledger. User asks if contract 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D (UniswapV2Router02) is risky. Read-only. Stop at 8 calls. Use check_contract_security. Verify via MCP rather than relying on prior knowledge.
+====
+
+[USER]
+Is this contract risky? 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
+
+[PLAN]
+1. Load schema for mcp__vaultpilot-mcp__check_contract_security via ToolSearch (deferred tool).
+2. Call check_contract_security with address=0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D, chain=ethereum.
+3. Summarize verification status, proxy pattern, and any dangerous admin functions in 1-2 sentences.
+4. Stay read-only. Hard stop at 8 tool calls.
+
+[TOOL_CALLS]
+1. ToolSearch query="check_contract_security" -> loaded schema for mcp__vaultpilot-mcp__check_contract_security.
+2. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/ -> confirmed transcripts dir exists, 088.txt not present.
+3. mcp__vaultpilot-mcp__check_contract_security(address=0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D, chain=ethereum) -> DENIED by harness permission prompt; no data returned.
+4. Write /Users/s/dev/test_mcp/smoketest/transcripts/088.txt (this file).
+
+Total tool calls: 4 (under 8-call cap).
+
+[FINAL_REPLY_TO_USER]
+I couldn't verify it via the MCP tool — check_contract_security was denied by the permission prompt, so I have no on-chain attestation to share. Out-of-band, that address is the well-known UniswapV2Router02 (verified, non-upgradeable, no admin/mint/pause), but please re-run with the tool approved if you want a confirmed read.
+
+[OUTCOME]
+blocked_by_permission_denial — no MCP verification performed; user told explicitly that the answer is based on prior knowledge, not a live check, and asked to re-approve the tool for a confirmed result.
+
+[OBSERVATIONS]
+- check_contract_security is a deferred tool; required a ToolSearch select-load before invocation. Schema loaded fine.
+- Permission prompt for mcp__vaultpilot-mcp__check_contract_security is denying even read-only verification; if this is a smoketest fixture, the allowlist for read-only MCP calls (check_contract_security, check_permission_risks, get_token_metadata, etc.) likely needs to be expanded in .claude/settings.json — candidate for the fewer-permission-prompts skill.
+- Stayed strictly read-only; no prepare_*/send_transaction calls attempted.
+- Did not fabricate a verification result to fill the gap — flagged the denial honestly and labeled the UniswapV2Router02 identification as prior knowledge.
+- Well under the 8-call budget (4 calls used, including the denied one and the transcript write).

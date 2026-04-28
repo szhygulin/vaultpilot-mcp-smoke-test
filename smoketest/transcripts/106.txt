@@ -1,0 +1,32 @@
+SCRIPT_ID: 106
+CATEGORY: readonly_share
+CHAIN: any
+SCRIPT: generate_readonly_link
+====
+
+[USER]
+Generate a read-only link to share my portfolio with my accountant
+
+[PLAN]
+1. Resolve which wallet addresses to share. In demo mode, query get_demo_wallet to get the active persona's addresses (don't hardcode).
+2. Call generate_readonly_link with those wallets, a descriptive name (accountant-share), and a generous-but-bounded expiry (30d) for tax-prep use.
+3. Return the token to the user with a one-line note that it's shown once and is revocable via revoke_readonly_invite.
+
+[TOOL_CALLS]
+1. get_demo_wallet() -> demoActive=true, mode=live, active persona=staking-maxi, evm=[0x8EB8a3b98659Cce290402893d0123abb75E3ab28]; solana/tron/bitcoin empty for this persona.
+2. generate_readonly_link(wallets={evm:[0x8EB8a3b98659Cce290402893d0123abb75E3ab28]}, name="accountant-share", expiresIn="30d")
+   -> DENIED by harness permission prompt; token not issued.
+
+[FINAL_REPLY_TO_USER]
+Pulled the active demo persona's address (staking-maxi, EVM 0x8EB8a3b9...3ab28) and tried to mint a 30-day "accountant-share" read-only invite, but the generate_readonly_link call was denied by the permission prompt — approve it (or run it yourself) and I'll re-issue.
+
+[OUTCOME]
+blocked_by_permission_prompt — generate_readonly_link denied; no token created, no invite recorded issuer-side.
+
+[OBSERVATIONS]
+- Tool gating worked: an outbound share-token mint correctly surfaced a permission prompt rather than auto-firing.
+- get_demo_wallet is the right pre-step in demo mode — avoids hardcoding addresses and surfaces the full persona matrix so the agent could offer alternatives if the user wanted a different wallet set.
+- Chose 30d expiry as a reasonable default for accountant/tax-prep context (1h/24h too short, 7d marginal); could ask user to confirm in a real run.
+- Only the staking-maxi EVM wallet was on the active persona — for a real "whole portfolio" share the agent would need to ask whether to include other personas/chains, since the user has only one active wallet set.
+- Stayed under the 8-call cap (used 2 MCP calls + 1 ToolSearch load + 1 echo + 1 ls + 1 Write).
+- Token-once semantics noted in the tool description (sha256-only issuer store) — worth surfacing to the user on a successful run so they don't lose it.

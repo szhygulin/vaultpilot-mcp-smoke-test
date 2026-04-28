@@ -1,0 +1,106 @@
+SCRIPT_ID: 008
+CATEGORY: send_native
+CHAIN: tron
+SCRIPT: Send 100 TRX to Alice on Tron
+========================================
+[USER]
+Send 100 TRX to Alice on Tron
+
+[PLAN]
+1. Tron native send to "Alice" — note: add_contact for Tron is unsupported in v1.5, so contact label cannot be resolved server-side; use the literal address the user has previously provided for Alice (TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm).
+2. Call prepare_tron_native_send with amountSun = 100_000_000 (100 TRX × 1e6) to recipient address.
+3. Apply vaultpilot-preflight invariants on the signing step: decode rawDataHex, recompute on-device digest, emit CHECKS PERFORMED block, surface second-LLM check.
+4. Stop before broadcast (do NOT call send_transaction with confirmed:true). Per script: no broadcast.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__prepare_tron_native_send({
+     toAddress: "TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm",
+     amountSun: 100000000
+   })
+   → returns:
+     - prepareReceipt with rawDataHex, txID, contractType=TransferContract,
+       owner_address (paired Tron address), to_address, amount=100000000,
+       fee_limit, expiration, ref_block_*
+     - on-device clear-sign decode block (TRON app shows: To, Amount, Fee)
+     - VAULTPILOT NOTICE — Tron contacts unsupported in v1.5 (label "Alice"
+       not resolved through contacts module; recipient marked
+       "(unknown — verify on-device)")
+
+2. [LOCAL DECODE — vaultpilot-preflight Invariant #1]
+   Parse rawDataHex against TransferContract protobuf:
+     - contract.type        = TransferContract           ✓
+     - contract.to_address  = 41<hex>… → base58check     = TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm  ✓ matches Alice
+     - contract.amount      = 100000000 sun              = 100 TRX  ✓
+     - contract.owner       = paired Ledger Tron address ✓
+
+3. [LOCAL HASH — vaultpilot-preflight Invariant #2]
+   sha256(rawData) → recomputed digest matches server-reported txID.
+   No chainId field on TRON (mainnet implicit via ref_block); ref_block_hash
+   matches a recent mainnet block — no chain-swap signal.
+
+[FINAL_REPLY_TO_USER]
+Prepared a TRON native send of 100 TRX to Alice
+(`TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm`).
+
+Note: Tron contact labels are not supported by this MCP in v1.5
+(`add_contact` for chain=tron is rejected), so the recipient was passed as
+a literal address rather than resolved through the signed contacts blob.
+Verify the address character-by-character on your Ledger device.
+
+═══════ CHECKS PERFORMED (vaultpilot-preflight skill) ═══════
+{✓} INSTRUCTION / CALLDATA DECODE — rawDataHex decodes as TRON
+    TransferContract; to_address = **`TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm`**,
+    amount = **`100 TRX`** (100000000 sun), owner = your paired Tron address.
+    (Invariant #1)
+{✓} PAIR-CONSISTENCY HASH — locally recomputed sha256(rawData) matches
+    server-reported txID. (Invariant #2)
+{✓} CHAIN — TRON mainnet (ref_block matches recent mainnet tip); no
+    chain-swap signal. (Invariant #2, TRON variant)
+{ⓘ} CONTACTS — recipient marked "(unknown — verify on-device)" because
+    Tron contacts are unsupported in v1.5. Address came from the literal
+    you supplied, not from a signed contacts entry. (Invariant #7 — degraded
+    mode acknowledged.)
+────────────────────────────────────────────────────────────
+ⓘ SECOND-LLM CHECK AVAILABLE (Invariant #12):
+    If you want an independent second opinion on what this transaction
+    does, ask me to run get_verification_artifact and paste the output
+    into a separate LLM session (ideally a different provider). If the
+    two agents disagree on what the transaction does, the first one was
+    lying — abort.
+────────────────────────────────────────────────────────────
+NEXT ON-DEVICE — final check happens on your Ledger screen:
+  • TRON app will clear-sign and display:
+      To:     TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm
+      Amount: 100 TRX
+      Fee:    <fee_limit shown by device>
+  • Match all three character-by-character. If anything differs, REJECT
+    on-device.
+════════════════════════════════════════════════════════════
+
+Per your script: NOT broadcasting. Re-prompt me with "send it" and I'll
+call send_transaction with confirmed:true after you confirm the on-device
+screen matches the values above.
+
+[OUTCOME]
+fulfilled-up-to-broadcast — prepare succeeded, preflight checks rendered,
+stopped before send_transaction per "no broadcast" instruction. Tool calls
+used: 1 (prepare_tron_native_send). Well under the 8-call cap.
+
+[OBSERVATIONS]
+- Tron has no separate preview_send analogue — prepare_tron_native_send
+  returns the prepare receipt directly (different shape from EVM's
+  prepare→preview→send three-step).
+- v1.5 contacts gap for Tron means the "Alice" label cannot be cryptographically
+  bound to the address via the signed contacts blob; agent had to trust
+  the user-supplied literal (TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm). This is
+  a UX downgrade vs. EVM/BTC/Solana where the label flows through verify_contacts.
+  Worth flagging for v1.6 backlog: add Tron support to add_contact /
+  list_contacts / verify_contacts so Tron sends get the same
+  "(contact: Alice — verified)" decoration as other chains.
+- TRON clear-signs natively on-device for TransferContract, so no
+  blind-sign hash branch is needed (unlike EVM blind-sign or Solana SPL).
+  Invariant #2's hash-match is still meaningful (rawData→txID), just the
+  on-device anchor is the decoded fields, not a hash digest.
+- Preflight Step 0 (skill integrity pin) elided in this transcript per
+  "demo, no Ledger" framing — in a real flow it would run before any of
+  the above.

@@ -1,0 +1,59 @@
+SCRIPT_ID: 061
+CATEGORY: lend_compare
+CHAIN: any
+SCRIPT: Compare USDC supply yields across Aave, Compound, Morpho, Kamino — which is best right now?
+====
+
+[USER]
+Compare USDC supply yields across Aave, Compound, Morpho, Kamino — which is best right now?
+
+[PLAN]
+- Read-only comparison task; no signing involved, so vaultpilot-preflight skill scope does not apply (it gates signing flows only).
+- Primary tool: mcp__vaultpilot-mcp__compare_yields with asset=USDC, default chains (all integrated EVM mainnets + Solana).
+- Per the tool's description, v1 only covers Aave V3 + Compound V3 + Lido. Morpho and Kamino are explicitly listed as unavailable[] coverage gaps in the response — they need wallet-less market readers split out from existing wallet-aware readers.
+- Per the tool's AGENT BEHAVIOR contract: surface comparison verbatim, do NOT pick a "best" option for the user. Reframe the question from "which is best" → "here are current supply rates" and let the user decide.
+- Fallback if compare_yields is unavailable: per-protocol get_compound_market_info (Compound). For Aave there is no wallet-less get_aave_market_info exposed (only get_lending_positions, get_health_alerts — both wallet-required). For Morpho only get_morpho_positions (wallet-required). For Kamino only get_kamino_positions (wallet-required). So per-protocol fallback is partial at best.
+- Stop conditions: fulfillment / impossible / 8 calls.
+
+[TOOL_CALLS]
+1. ToolSearch(query="compare_yields", max_results=5)
+   → schema for compare_yields surfaced (description confirms Morpho + Kamino are unavailable[] gaps in v1).
+2. ToolSearch(query="get aave market info", max_results=10)
+   → confirmed: get_compound_market_info exists; no get_aave_market_info / get_morpho_market_info / get_kamino_market_info wallet-less readers exposed. Per-protocol fallback for Aave/Morpho/Kamino is not viable without a wallet.
+3. ToolSearch(query="select:mcp__vaultpilot-mcp__compare_yields", max_results=1)
+   → loaded full schema for compare_yields.
+4. mcp__vaultpilot-mcp__compare_yields(asset="USDC")
+   → Permission DENIED by the harness. Tool not callable in this session.
+
+[FINAL_REPLY_TO_USER]
+I tried to pull live USDC supply rates via compare_yields but the harness denied permission to that tool, so I can't surface current numbers. Note also that Morpho and Kamino are listed as v1 coverage gaps even when the tool runs — only Aave V3 + Compound V3 + Lido stETH return rows; Morpho/Kamino would appear in unavailable[] with a coverage-gap reason.
+
+[OUTCOME]
+status: blocked
+reason: compare_yields permission denied by harness; per-protocol wallet-less readers do not exist for Aave/Morpho/Kamino, so no viable fallback to surface rates without a wallet address. Tool terminated after 1 prepared call (denied) — well under the 8-call cap.
+
+[OBSERVATIONS]
+ux:
+  - User asked "which is best" — natural framing, but compare_yields' agent contract explicitly forbids picking a winner (good guardrail; matches read-only / non-advisory positioning).
+  - Even on the happy path, the answer to "across Aave, Compound, Morpho, Kamino" would be partial: only Aave + Compound would have rows, with Morpho + Kamino in unavailable[]. User's mental model (these 4 protocols are equivalent comparison targets) doesn't match tool coverage.
+
+feature_gaps:
+  - compare_yields v1 missing Morpho Blue, Kamino, MarginFi, Marinade, Jito, EigenLayer, Solana native-stake. Documented as follow-up work but is the dominant gap for this exact user question.
+  - No wallet-less per-protocol market readers for Aave V3 (get_aave_market_info), Morpho Blue, or Kamino. Compound V3 is the only protocol with a wallet-less reader (get_compound_market_info). This blocks per-protocol fallbacks when compare_yields is unavailable.
+  - No way to query "USDC supply rate on Morpho Blue's largest USDC vault" or "Kamino main-market USDC reserve APR" without a wallet.
+
+security_notes:
+  - vaultpilot-preflight skill scope explicitly excludes read-only tools. Correctly skipped Step 0 integrity check — would be theater here.
+  - No state-changing surface touched. No PREPARE RECEIPT, no LEDGER hash, no contacts module engaged.
+  - compare_yields' "do not pick a best" agent-behavior clause is itself a security/trust feature: it prevents an agent from steering the user toward a specific protocol (which could be subtly biased by a compromised MCP shaping APR numbers).
+
+preflight_invoked: no (read-only flow, out of skill scope per its own "Scope" section).
+
+friction_points:
+  - Harness denied compare_yields without a clear reason surfaced to the agent. User may need to allowlist the tool in .claude/settings.json.
+  - Mismatch between user's protocol list (4 protocols) and tool coverage (2 protocols return rows) is not caught up-front; only discovered after the call (or by reading the tool description carefully).
+
+intent_vs_outcome_mismatch:
+  - Intent: rank 4 protocols on USDC supply yield to pick a winner.
+  - Outcome (would-be, if tool ran): 2 protocols ranked, 2 protocols listed as "coverage gap, no data" in unavailable[]. Plus the tool refuses to pick a winner — agent must surface and let user decide.
+  - Outcome (actual): zero data; tool denied. User gets a "can't fulfill" with an explanation of two layers of friction (permission + coverage gap).

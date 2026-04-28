@@ -1,0 +1,31 @@
+SCRIPT_ID: 120
+CATEGORY: edge_unsupported
+CHAIN: aptos
+SCRIPT: Stake 50 APT with a top validator on Aptos
+====
+
+[USER]
+Stake 50 APT with a top validator on Aptos
+
+[PLAN]
+- Recognize that Aptos (APT) is not in VaultPilot's supported chain set.
+- Cross-check the available MCP toolset: prepare_* tools cover EVM (Ethereum/L2s via Uniswap/Aave/Compound/Morpho/Curve/Lido/EigenLayer/Safe), Solana (Jito/Marinade/native stake/SPL/LiFi), Bitcoin, Litecoin, and Tron. No Aptos/Move-VM tools (no prepare_aptos_*, no APT staking, no Aptos validator listing).
+- Ledger pairing tools confirm the same scope: pair_ledger_btc, pair_ledger_ltc, pair_ledger_solana, pair_ledger_tron, pair_ledger_live (EVM). No pair_ledger_aptos.
+- Do NOT call request_capability — per task instruction it is rate-limited and this is a demo smoketest. Just explain the unsupported-chain situation and stop.
+- Reply in 1-2 sentences, offer the closest supported alternatives (ETH staking via Lido/EigenLayer, SOL via Jito/Marinade, TRX freeze-for-energy) so the user has a path forward.
+
+[TOOL_CALLS]
+(none — short-circuit on unsupported-chain detection; deliberately skipping request_capability to respect rate limit)
+
+[FINAL_REPLY_TO_USER]
+Aptos isn't supported by VaultPilot — the server's staking tools cover Ethereum (Lido, EigenLayer, native validators), Solana (Jito, Marinade, native stake), and Tron (freeze/vote), but there's no Aptos/Move-VM path. If you'd like, I can stake an equivalent USD amount on one of those chains instead.
+
+[OUTCOME]
+short_circuit_unsupported_chain
+
+[OBSERVATIONS]
+- Detection was purely from tool-surface inspection — no Aptos prepare_* or pair_ledger_aptos exists, so any attempt would have to go through request_capability.
+- Correctly avoided request_capability call to honor the rate-limit guidance for this demo run.
+- Stopped on the first turn with no MCP traffic; this is the desired fast-fail behavior for out-of-scope chains.
+- Offered concrete supported substitutes (ETH/SOL/TRX staking) rather than a bare "no" so the user can redirect intent without another round trip.
+- No VAULTPILOT NOTICE blocks triggered since no tool was called.

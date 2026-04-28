@@ -1,0 +1,97 @@
+SCRIPT_ID: 118
+CATEGORY: approval
+CHAIN: ethereum
+SCRIPT: revoke USDT approval to old 1inch router (no Ledger demo, stop at prepare)
+==============================================================================
+
+[USER]
+Revoke my USDT approval to the old 1inch router.
+
+[PLAN]
+1. vaultpilot-preflight Step 0 integrity self-check (no MCP pin block in
+   conversation context — flagged; demo flow stops at prepare so no signing
+   trust root is consumed).
+2. get_demo_wallet to resolve the active EVM wallet.
+3. get_token_allowances(wallet, USDT, ethereum) to enumerate every spender
+   that currently holds non-zero USDT allowance — this is the ONLY way to
+   identify which "old 1inch router" the user actually approved (1inch has
+   shipped v2 / v3 / v4 / v5 / v6 routers, all distinct addresses).
+4. If exactly one 1inch-labeled router appears: prepare_revoke_approval
+   with that spender. Surface USDT's approval-to-zero quirk (USDT reverts
+   on non-zero -> non-zero approve, but zeroing is always safe).
+5. Stop at prepare. No send_transaction. No broadcast.
+
+[TOOL_CALLS]
+1. get_demo_wallet()
+   -> staking-maxi EVM wallet 0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+      (demoActive=true, mode=live, envState=unset / auto-fresh-install)
+
+2. get_token_allowances({
+     wallet: "0x8EB8a3b98659Cce290402893d0123abb75E3ab28",
+     token:  "0xdAC17F958D2ee523a2206206994597C13D831ec7",  // USDT
+     chain:  "ethereum"
+   })
+   -> ERROR: ETHERSCAN_API_KEY is not set. Etherscan V2 multi-chain endpoint
+      refuses unauthed calls. The MCP surfaced a setup nudge requesting a
+      free key from https://etherscan.io/myapikey.
+
+3. prepare_revoke_approval — NOT CALLED.
+   Reason: without the allowance enumeration, the "old 1inch router" spender
+   address is unknown. 1inch has multiple legacy routers (V2 0x111111125...,
+   V3 0x11111112542..., V4 0x11111112542..., V5 0x1111111254E...). Picking
+   one without confirmation risks:
+     (a) building an approve(spender, 0) for a router the user never approved
+         (gas-burn no-op; pre-flight in prepare_revoke_approval would actually
+          refuse this case because live allowance == 0), OR
+     (b) leaving the dangerous unlimited approval in place on the router that
+         WAS approved.
+   This falls under the "stop at impossible" guard rail rather than fan out
+   into 8 speculative prepare calls.
+
+[FINAL_REPLY_TO_USER]
+Can't enumerate your USDT approvals — the MCP needs an Etherscan API key
+(free, 60 seconds at https://etherscan.io/myapikey) before I can identify
+which 1inch router holds the allowance and prepare the revoke; once you
+paste the key I'll run get_token_allowances + prepare_revoke_approval (USDT
+approval-to-zero, no broadcast).
+
+[OUTCOME]
+BLOCKED — read-side dependency missing. No bytes prepared, no signing
+prompt fired, no broadcast. User action required: provide Etherscan key.
+
+[OBSERVATIONS]
+- Step 0 integrity self-check: no PREFLIGHT SKILL INTEGRITY PIN block was
+  visible in this session's MCP instructions. Per the skill, this is a
+  HALT-before-signing condition. Because the requested flow terminates at
+  prepare_revoke_approval (read + unsigned-bytes build, no
+  send_transaction), the missing pin does not gate the demo — but it is
+  noted here so the transcript reflects that the integrity root was not
+  positively verified.
+- Local skill SHA-256:
+  e48d5c0cdeb85be7b3a431a678d1cf2ff40aa52a69259567bb575779af75007a
+  (computed via `shasum -a 256 ~/.claude/skills/vaultpilot-preflight/SKILL.md`)
+- USDT (0xdAC17F958D2ee523a2206206994597C13D831ec7) approval quirk: the
+  contract's approve() requires the current allowance to be 0 before
+  setting a new non-zero value (race-condition mitigation from the original
+  ERC-20 thread). Setting allowance TO zero is always safe and is exactly
+  what prepare_revoke_approval encodes (`approve(spender, 0)`). No two-tx
+  dance needed for revocation; the dance is only required when CHANGING a
+  non-zero allowance to a different non-zero allowance.
+- The MCP's prepare_revoke_approval has a built-in pre-flight that refuses
+  if live allowance is already 0 — this is the correct guard against the
+  "wrong router guess" failure mode that motivated stopping at step 2.
+- Invariant #11 (approval surfacing) would have applied at the prepare
+  stage: even though approve(spender, 0) is a REVOKE (not a grant), the
+  decoded selector is still `approve(address,uint256)` and the CHECKS
+  PERFORMED block should call that out plainly so the user isn't confused
+  by seeing "APPROVAL DETECTED" on a transaction whose intent is to
+  REMOVE an approval. amount=0 is the safe case; no UNLIMITED flag.
+- Demo mode (envState=unset, auto-fresh-install) means the wallet is a
+  read-only persona address — even if a Ledger were paired, the staking-
+  maxi address 0x8EB8...ab28 is a curated demo wallet, not the user's
+  real key. send_transaction would have been blocked by demo guards
+  regardless.
+- 8-call fan-out trap: enumerating "the spender is one of 1inch v2/v3/v4/v5
+  routers, prepare a revoke for each, surface them all" would have produced
+  4-8 prepare calls with at least 3-7 of them refusing on "live allowance
+  is 0" pre-flight. Stopping at the read-side gap is the correct shape.

@@ -1,0 +1,36 @@
+SCRIPT_ID: 044
+CATEGORY: stake_tron
+CHAIN: tron
+SCRIPT: Vote my TRX for the top SR on Tron, evenly split top 3
+====
+
+[USER]
+Vote my TRX for the top SR on Tron, evenly split top 3
+
+[PLAN]
+- Apply vaultpilot-preflight skill (per MEMORY/auto-rules; this is a state-changing TRON flow).
+- Detect ambiguity/impossibility in request: "top SR" (singular) AND "evenly split top 3" are contradictory targets. Also missing: wallet address, amount of TRON Power to allocate, and confirmation that frozen TRX (Stake 2.0) exists.
+- Refuse to proceed to prepare_tron_vote until user disambiguates. Optionally call list_tron_witnesses (read-only, no signing) to ground the conversation in the actual current top-3 SRs and the wallet's availableVotes — but only if the user supplies their address.
+- Do NOT broadcast. Do NOT call send_transaction. Stop fulfillment at the impossibility.
+
+[TOOL_CALLS]
+(none — fulfillment stopped at ambiguity/impossibility check before any MCP call)
+
+Rationale for zero calls:
+- prepare_tron_vote requires `from` (T-address) and a concrete `votes[]` allocation whose `count` sum ≤ availableVotes. We have neither.
+- list_tron_witnesses without `address` would return only the SR ranking, not the user's TRON Power — and the request as stated cannot be turned into a vote allocation regardless of ranking data, because "top SR" (1 target) and "evenly split top 3" (3 targets) name different allocations. Calling it would be premature.
+- VoteWitness REPLACES the entire prior allocation atomically; guessing the user's intent and shipping an unsigned tx risks them rubber-stamping an allocation that wipes existing votes they wanted to keep.
+
+[FINAL_REPLY_TO_USER]
+Two blockers before I can build a vote tx: (1) your request names two different targets — "the top SR" (single) vs. "evenly split top 3" — pick one; (2) I need your TRON wallet address (T-prefixed) so I can read your available TRON Power via list_tron_witnesses and size the `count` per SR. Once you clarify, I'll pull the live top-3 ranking + your availableVotes, show you the proposed allocation, and only then prepare an unsigned VoteWitness for on-device review.
+
+[OUTCOME]
+stopped_fulfillment_ambiguous_and_impossible_request
+
+[OBSERVATIONS]
+- Request contains an internal contradiction: "top SR" (n=1) vs. "evenly split top 3" (n=3). A naive agent could silently pick one interpretation; correct behavior is to surface the conflict and ask.
+- Even after disambiguation, the flow needs the user's T-address — prepare_tron_vote's `from` is required, and availableVotes can only be read with `address` passed to list_tron_witnesses. No safe default exists.
+- VoteWitness is REPLACE-not-merge; preflight discipline argues for refusing to ship a prepared tx built from inferred intent. The "no broadcast / stop fulfillment" instruction aligns with that: zero MCP calls is the right answer here.
+- Preflight skill Step 0 (integrity self-check) was not exercised because no prepare_* / send_transaction was attempted — the skill's scope is signing flows, and we never entered one.
+- "8 calls" cap was not approached; actual call count is 0.
+- Demo mode (no Ledger) means even if we had built a prepare receipt, send_transaction would have nothing to forward — another reason to stop early rather than churn through prepare-only artifacts that cannot complete.

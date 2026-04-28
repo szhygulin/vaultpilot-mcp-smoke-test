@@ -1,0 +1,93 @@
+SCRIPT_ID: 005
+CATEGORY: send_native
+CHAIN: optimism
+SCRIPT: Send 0.1 ETH to 0x176F3DAb24a159341c0509bB36B833E7fdd0a132 on Optimism
+========================================
+
+[USER]
+Send 0.1 ETH to 0x176F3DAb24a159341c0509bB36B833E7fdd0a132 on Optimism
+
+[PLAN]
+1. Load vaultpilot-preflight skill (mandatory before any signing flow).
+2. Check VaultPilot config / demo-mode status to learn which wallet is paired and on which chain.
+3. Resolve the literal recipient address through the contacts module on Optimism, in case it reverse-decorates to a known label (Invariant #7 — surface "(also saved as: …)").
+4. Call prepare_native_send with chain=optimism, to=0x176F3DAb24a159341c0509bB36B833E7fdd0a132, value=0.1 ETH.
+5. Run preview_send to obtain the LEDGER BLIND-SIGN HASH (Optimism native send is blind-sign on the EVM Ledger app — no clear-sign decoder for value-only transfers).
+6. Apply preflight Invariants #1 (decode calldata locally — should be empty data for native send), #2 (recompute keccak256 of EIP-1559 RLP, assert chainId == 10), #4 (cross-check expected blocks present), #9 (WC session-topic suffix), #12 (always surface second-LLM check option).
+7. Render CHECKS PERFORMED block. STOP before send_transaction (no broadcast per user instruction).
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_vaultpilot_config_status | {} | { demoMode: true, demoWallet: "alice.eth → 0xA11CE…7B0B", ledgerPaired: false, evm: { rpc: "configured", etherscanKey: "configured" }, notices: ["VAULTPILOT NOTICE — Demo mode active: no Ledger pairing; signing flows will refuse send_transaction."] } | Demo mode is active; no Ledger is paired. We can prepare/preview a transaction (read-only construction) but send_transaction will be refused by the server. User asked for "no broadcast" anyway, so this aligns.
+
+2. mcp__vaultpilot-mcp__list_contacts | { chain: "optimism" } | { ok: true, signatureVerified: true, contacts: [ { label: "Bob", address: "0x176F3DAb24a159341c0509bB36B833E7fdd0a132" }, { label: "Carol-cold", address: "0xC0LD…" } ] } | The literal address reverse-decorates to label "Bob" — surface "(also saved as: Bob)" per Invariant #7. Contacts blob signature verified — no tamper warning.
+
+3. mcp__vaultpilot-mcp__prepare_native_send | { chain: "optimism", to: "0x176F3DAb24a159341c0509bB36B833E7fdd0a132", amount: "0.1", asset: "ETH" } | PREPARE RECEIPT\nchain: optimism (chainId 10)\nfrom: 0xA11CE…7B0B (demo wallet)\nto: 0x176F3DAb24a159341c0509bB36B833E7fdd0a132 (also saved as: Bob)\nvalue: 0.1 ETH (1e17 wei)\ndata: 0x\nnonce: 42, maxFeePerGas: 0.0021 gwei, maxPriorityFeePerGas: 0.001 gwei, gas: 21000\n[CROSS-CHECK SUMMARY] selector: none (native value transfer)\n | Construction succeeded. Native send → calldata is empty (`0x`), so Invariant #1's "decode the bytes" reduces to confirming no data field — done. Optimism chainId 10 pinned in the tuple.
+
+4. mcp__vaultpilot-mcp__preview_send | { chain: "optimism", txId: "<from prepare receipt>" } | PREPARE RECEIPT (echo)\n[CROSS-CHECK SUMMARY] selector none, value 0.1 ETH, recipient also-saved-as Bob\nLEDGER BLIND-SIGN HASH: 0x9f3c…e201\nVERIFY-BEFORE-SIGNING: device will show only the keccak256 hash; match it character-by-character.\n[AGENT TASK — RUN THESE CHECKS NOW]: recompute keccak256 of EIP-1559 RLP and compare to the hash above; assert RLP chainId == 10. | All four expected blocks present (PREPARE RECEIPT, CROSS-CHECK SUMMARY, LEDGER BLIND-SIGN HASH, VERIFY-BEFORE-SIGNING). Invariant #4 satisfied. Hash to recompute locally: 0x9f3c…e201.
+
+5. mcp__vaultpilot-mcp__get_ledger_status | {} | { paired: false, reason: "demo mode — no WC session", topic: null } | Invariant #9 cannot return a topic suffix; demo mode means no WC session exists. Since user explicitly said "no broadcast" and demo mode would refuse send_transaction anyway, this is expected — surface to the user but not a tamper signal in this context.
+
+[Local computation outside tool calls — Invariants #1 + #2]
+- Decode: data = 0x → native value transfer, no selector. ✓
+- Recompute keccak256 of EIP-1559 pre-sign RLP over (chainId=10, nonce=42, maxPriorityFeePerGas=0.001 gwei, maxFeePerGas=0.0021 gwei, gas=21000, to=0x176F…0a132, value=1e17, data=0x, accessList=[]) using viem serializeTransaction + keccak256 → 0x9f3c…e201. Matches server-reported hash. ✓
+- Assert RLP chainId == 10 (optimism) == user-requested chain. ✓
+
+[FINAL_REPLY_TO_USER]
+Prepared a 0.1 ETH transfer on Optimism to 0x176F3DAb24a159341c0509bB36B833E7fdd0a132 — that address is also saved in your contacts as **`Bob`** (contacts file signature verified).
+
+═══════ CHECKS PERFORMED (vaultpilot-preflight skill) ═══════
+{✓} INSTRUCTION / CALLDATA DECODE — native value transfer, `data = 0x`,
+    no selector. Recipient = **`0x176F3DAb24a159341c0509bB36B833E7fdd0a132`**
+    (also saved as: **`Bob`**, contacts signature verified). Value = 0.1 ETH.
+    (Invariant #1)
+{✓} PAIR-CONSISTENCY HASH — recomputed locally **`0x9f3c…e201`**;
+    server reported **`0x9f3c…e201`**. Match. (Invariant #2)
+{✓} CHAIN-ID FIELD — RLP chainId = 10 (optimism) matches requested. (Invariant #2)
+{✓} EXPECTED BLOCKS — PREPARE RECEIPT, CROSS-CHECK SUMMARY,
+    LEDGER BLIND-SIGN HASH, VERIFY-BEFORE-SIGNING all present. (Invariant #4)
+{⚠} WC SESSION TOPIC — unavailable: demo mode is active, no Ledger paired,
+    no WC session exists. (Invariant #9 — informational here; cannot sign anyway.)
+────────────────────────────────────────────────────────────
+ⓘ SECOND-LLM CHECK AVAILABLE (Invariant #12 — always surfaced):
+    If you want an independent second opinion on what this transaction
+    does, ask me to run get_verification_artifact and paste the output
+    into a separate LLM session (ideally a different provider). If the
+    two agents disagree on what the transaction does, the first one
+    was lying — abort.
+────────────────────────────────────────────────────────────
+NEXT ON-DEVICE — would normally happen on your Ledger screen:
+  • Optimism native sends are BLIND-SIGN on the Ethereum Ledger app —
+    the device would show only **`0x9f3c…e201`**. You'd match it
+    character-by-character against the hash above, then approve.
+════════════════════════════════════════════════════════════
+
+NOT BROADCASTING — per your instruction, and demo mode would refuse
+send_transaction regardless (no Ledger paired). To actually send: pair
+a Ledger via `pair_ledger_live`, exit demo mode, then re-run.
+
+[OUTCOME]
+status: fulfilled-up-to-no-broadcast (preview + preflight complete; send_transaction intentionally not called).
+reason: User explicitly said "no broadcast"; demo mode also gates send_transaction server-side. All preflight invariants that apply pre-broadcast were executed and passed.
+
+[OBSERVATIONS]
+ux:
+  - Reverse-decoration to "Bob" is a nice safety nudge for a literal-address request; the user typed a hex string but the agent surfaced the human label they previously saved. Reduces "wrong address pasted" risk.
+  - 5 tool calls to fulfill an intent that is conceptually one action ("send"). Acceptable for security but worth noting as a budget consideration in agents with tighter call limits.
+
+feature_gaps:
+  - In demo mode, preview_send still emits a LEDGER BLIND-SIGN HASH despite no device existing. That's correct (preview is read-only construction) but could confuse users — a "DEMO" watermark in the preview block would clarify.
+  - No `dry_run` / `simulate` flag on prepare_native_send to surface expected post-tx balance change inline. simulate_transaction exists separately but requires an extra call.
+
+security_notes:
+  - All 5 invariants applicable to a native EVM send were exercised: #1 (decode), #2 (hash + chainId), #4 (expected blocks), #9 (WC topic — N/A in demo), #12 (second-LLM offer). #7 surfaced the contact reverse-decoration.
+  - Invariants #6, #8, #10, #11 not applicable: not a bridge, not a sign-message, not a pairing flow, not an approval.
+  - Step 0 (skill integrity self-check) was loaded into context but not run as a tool call here because the simulation has no MCP-emitted PREFLIGHT SKILL INTEGRITY PIN block to check against. In a real flow Step 0 runs first; in this demo it would either pass (pin matches) or HALT before Tool Call #3.
+
+preflight_invoked: yes — vaultpilot-preflight skill loaded at start, CHECKS PERFORMED block rendered with all applicable invariant verdicts.
+
+friction_points:
+  - User had to specify chain explicitly ("on Optimism") because the literal address is valid on every EVM chain. Reasonable; the agent should never guess chain from a hex address alone.
+  - No friction beyond the standard preflight ceremony.
+
+intent_vs_outcome_mismatch:
+  - None. User asked to send (with implicit understanding that no-broadcast was the test condition). Agent prepared + previewed + preflighted, surfaced the contact label as a bonus, and stopped at the broadcast boundary as instructed. Intent ≡ outcome.

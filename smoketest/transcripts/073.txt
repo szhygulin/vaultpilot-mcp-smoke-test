@@ -1,0 +1,28 @@
+SCRIPT_ID: 073
+CATEGORY: portfolio
+CHAIN: ethereum
+SCRIPT: What's the diff in my portfolio since last week?
+====
+
+[USER]
+What's the diff in my portfolio since last week?
+
+[PLAN]
+Read-only portfolio decomposition for the active demo wallet (staking-maxi persona, EVM-only at current curation: 0x8EB8a3b98659Cce290402893d0123abb75E3ab28). "Since last week" maps cleanly to the 7d rolling window. Single call to get_portfolio_diff with wallet + window=7d; format=both so the narrative can be relayed verbatim while the structured envelope stays available for follow-ups (per-asset price vs. net-flow vs. residual breakdown). No solana/tron/bitcoin addresses for this persona, so EVM-only fan-out. Read-only, no Ledger, no signing. Stop at 8 calls — this needs 1.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_portfolio_diff(wallet="0x8EB8a3b98659Cce290402893d0123abb75E3ab28", window="7d", format="both")
+
+[FINAL_REPLY_TO_USER]
+Here's your 7-day portfolio diff for 0x8EB8...ab28 (staking-maxi): top-line USD change broken down per-asset into price moves, net deposits/withdrawals, and residual (interest accrual / swap legs). Want me to widen to 30d or ytd?
+
+[OUTCOME]
+success: single read-only call returned both narrative and structured diff for the 7d window; no signing, no Ledger interaction, well under the 8-call ceiling.
+
+[OBSERVATIONS]
+- "Since last week" -> window="7d" (rolling), the natural mapping; ytd would be wrong here.
+- Staking-maxi persona has only an EVM address at this curation date, so no solana/tron/bitcoin params — avoids spurious empty-chain folds.
+- format="both" chosen over "narrative" alone so the structured envelope is available if the user asks "which asset drove it?" without re-calling.
+- get_portfolio_diff is the right tool vs. get_portfolio_summary (current state only) or get_pnl_summary (single net number); user asked for decomposition.
+- 7d window is well inside the ~50-item-per-chain history cap, so truncated:true is unlikely for this persona.
+- Stayed strictly read-only; no prepare_*/send_transaction/preview_send calls.

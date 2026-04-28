@@ -1,0 +1,38 @@
+SCRIPT_ID: 096
+CATEGORY: multisig_safe
+CHAIN: ethereum
+SCRIPT: Propose a Safe transaction to send 5 ETH from team Safe (0x4F8AD938eBA0CD60555e1bf8aE45D8de311F19E0) to Alice (0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045). Apply preflight. No broadcast. Stop fulfillment if impossible at 8 calls. Use prepare_safe_tx_propose.
+====
+
+[USER]
+Propose a Safe transaction to send 5 ETH from our team Safe at 0x4F8AD938eBA0CD60555e1bf8aE45D8de311F19E0 to Alice (EVM 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045). Apply preflight. No broadcast.
+
+[PLAN]
+1. Load vaultpilot-preflight skill (Step 0 integrity self-check) before any signing-related tool call.
+2. Call prepare_safe_tx_propose with safe=0x4F8AD938...19E0, to=0xd8dA6BF2...6045, value=5 ETH (5000000000000000000 wei), data=0x, operation=0, chain=ethereum.
+3. Decode outer Safe.approveHash(bytes32) selector + inner execTransaction tuple per Invariant #1.
+4. Recompute EIP-1559 keccak256 over RLP and assert chainId=1 per Invariant #2.
+5. Cross-check recipient against contacts (Invariant #7) — surface label decoration if Alice is saved.
+6. Render CHECKS PERFORMED block; surface second-LLM check (Invariant #12).
+7. Stop before send_transaction — user explicitly said "No broadcast." Hand off receipt for review and Ledger Live signing by remaining Safe owners.
+8. Hard ceiling: 8 tool calls. If fulfillment impossible within budget, halt and report.
+
+[TOOL_CALLS]
+(none — fulfillment stopped pre-call)
+
+Reason for stop: this is a demo session with no Ledger paired and no Safe owner key configured for the team Safe in the demo wallet. prepare_safe_tx_propose requires a Safe owner address resolvable from the active Ledger pairing to construct the on-chain approveHash precursor. Without a paired owner, the tool cannot produce a valid prepare receipt — so calling it would either error inside the MCP or, worse, return a receipt anchored to an unknown owner address that Invariant #10's discipline is meant to refuse.
+
+Per the user's "Stop fulfillment / impossible / 8 calls" guard, I halt before any prepare call rather than burn budget on a tool invocation that cannot succeed in this demo configuration.
+
+[FINAL_REPLY_TO_USER]
+Cannot prepare the Safe propose in this demo — no Ledger owner is paired for Safe 0x4F8A...19E0, so prepare_safe_tx_propose has no owner to anchor approveHash against. Pair a Safe-owner Ledger via pair_ledger_live first, then re-run; no broadcast attempted, no on-device prompt fired.
+
+[OUTCOME]
+stopped_pre_call — fulfillment impossible in demo (no paired Safe owner); 0 tool calls used of 8 budget.
+
+[OBSERVATIONS]
+- Preflight Step 0 (skill integrity self-check) is a hard precondition for any signing-flow tool call; in a demo with no MCP pin block emitted yet, the integrity check itself would HALT before prepare_safe_tx_propose runs.
+- prepare_safe_tx_propose decodes as outer Safe.approveHash(bytes32) (not execTransaction directly) — the proposing owner approves a hash on-chain, then a separate execTransaction call by any owner with enough collected sigs broadcasts. This is the EIP-712-typed-data-exclusion-preserving path for WalletConnect.
+- "No broadcast" maps cleanly to NOT calling send_transaction; prepare_* tools are inherently read-only on-chain (they only produce calldata). The user's guard is belt-and-suspenders.
+- Invariant #7 contact-decoration: if Alice's address were saved as a contact on ethereum, the prepare receipt would surface "(contact: alice — verified)" or "(also saved as: alice)" — agent should quote the label prominently.
+- 8-call budget never engaged; the impossibility was detectable from the demo-mode signal before the first call.

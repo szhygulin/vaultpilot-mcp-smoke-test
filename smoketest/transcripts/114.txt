@@ -1,0 +1,55 @@
+SCRIPT_ID: 114
+CATEGORY: tx_inspect
+CHAIN: any
+SCRIPT: Simulate what would happen if I borrowed 10000 USDC against my ETH on Aave
+====
+
+[USER]
+Simulate what would happen if I borrowed 10000 USDC against my ETH on Aave
+
+[PLAN]
+1. Resolve the active demo wallet so the simulation targets a real address.
+2. Read the wallet's current Aave V3 lending positions to confirm ETH collateral exists and capture the pre-state (collateral USD, debt USD, health factor).
+3. Call simulate_position_change with action=borrow, asset=USDC (0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48), amountUsd=10000, protocol=aave-v3, chain=ethereum to project the post-borrow health factor and totals.
+4. Report the delta to the user (pre vs post collateral / debt / HF, plus liquidation-risk read).
+5. Read-only throughout — no prepare_*, no send_transaction.
+
+[TOOL_CALLS]
+1. get_demo_wallet()
+   -> demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+2. get_lending_positions(wallet=0x8EB8a3b98659Cce290402893d0123abb75E3ab28, chains=[ethereum])
+   -> { wallet, positions: [] }   // no existing Aave V3 position on Ethereum
+3. simulate_position_change(wallet=0x8EB8a3b98659Cce290402893d0123abb75E3ab28, action=borrow,
+                            asset=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (USDC),
+                            amountUsd=10000, protocol=aave-v3, chain=ethereum)
+   -> Permission denied by harness (tool not allowlisted); could not retrieve projected HF.
+
+Total tool calls: 3 (well under the 8-call cap). Stopped because the third call was
+denied and the user-visible answer can be given from the data already gathered without
+attempting a workaround.
+
+[FINAL_REPLY_TO_USER]
+This wallet (staking-maxi demo, 0x8EB8…ab28) has no open Aave V3 position on Ethereum
+right now — there's no ETH (or wstETH/weETH) supplied as collateral on Aave, so a
+10k USDC borrow would just revert with "collateral balance is zero" / HF=0. To run a
+meaningful simulation we'd first need to either pick a wallet that already has ETH-class
+collateral on Aave (e.g. the defi-degen persona) or model a supply-then-borrow pair.
+Want me to re-run against defi-degen, or simulate "supply X ETH, then borrow 10k USDC"?
+
+[OUTCOME]
+Read-only. No transaction prepared, no signature requested, no broadcast. The borrow
+simulation itself was blocked by a tool-permission denial, but the pre-state read was
+sufficient to answer the user honestly: borrowing 10k USDC against ETH on Aave is not
+possible from this wallet because it holds no Aave collateral.
+
+[OBSERVATIONS]
+- Demo wallet auto-selected staking-maxi (auto-fresh-install reason). Persona name
+  implies liquid-staking exposure (stETH/weETH-class), but those positions are not
+  supplied to Aave V3 — get_lending_positions returned an empty array.
+- For the user's question to be answerable as literally stated, the wallet needs an
+  existing Aave aWETH / awstETH / aweETH balance. None present.
+- simulate_position_change is the right tool for this scenario (projects HF, collateral
+  USD, debt USD without sending), but was permission-denied in this session. Worth
+  surfacing in /allow or settings.json if this script will be re-run.
+- No VAULTPILOT NOTICE blocks were emitted on the two successful calls.
+- Stayed well under the 8-call budget (3 calls used).

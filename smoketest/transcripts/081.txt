@@ -1,0 +1,61 @@
+SCRIPT_ID: 081
+CATEGORY: education
+CHAIN: any
+SCRIPT: Educational question about Aave v2 vs v3 differences. No on-chain action, no wallet involvement, pure knowledge response. Stop at 8 calls.
+====
+
+[USER]
+What's the difference between Aave v2 and v3?
+
+[PLAN]
+This is a purely educational question with no on-chain side effects required.
+- No vaultpilot-mcp tool is appropriate here: there's no portfolio read, no tx prep, no price/yield query tied to the user's wallet.
+- compare_yields and get_lending_positions are tempting but neither answers a conceptual protocol-version question.
+- Best response: answer from general DeFi knowledge directly. Zero tool calls.
+- Preflight skill: not triggered — no prepare_*/preview_*/send/pair tool will be called.
+- Setup skill: not triggered — user isn't asking about setup or hitting a first-run error.
+
+[TOOL_CALLS]
+(none — question is conceptual; no MCP tool would add value)
+
+[FINAL_REPLY_TO_USER]
+Aave v3 is the successor to v2 with the same core lending model but several material upgrades:
+
+1. Capital efficiency
+   - v2: each asset has a single fixed loan-to-value (LTV) and liquidation threshold.
+   - v3: introduces "E-Mode" (Efficient Mode) — when supplied collateral and borrowed asset are correlated (e.g. stables, or ETH/stETH), users get much higher LTVs (up to ~97%).
+   - v3: "Isolation Mode" — newly listed/risky assets can only be used as collateral to borrow a capped set of stablecoins, limiting systemic risk.
+
+2. Risk management
+   - v3: per-asset supply caps and borrow caps (v2 had none), reducing exposure to a single bad oracle or depeg.
+   - v3: per-asset and per-user "borrow caps" + "siloed borrowing" for long-tail assets.
+   - v3: granular risk admin roles so risk parameters can be tuned without a full governance vote.
+
+3. Cross-chain / Portals
+   - v2: each deployment (Ethereum, Polygon, Avalanche) is fully siloed.
+   - v3: "Portal" feature allows whitelisted bridges to mint aTokens on a destination chain against locked liquidity on the source chain — foundation for cross-chain liquidity.
+
+4. Gas
+   - v3: ~20–25% cheaper on most operations due to refactored code and fewer SLOADs.
+
+5. Rewards & misc
+   - v3: native multi-reward incentives (any ERC-20, multiple per asset) baked into the core, not a separate contract.
+   - v3: improved liquidation logic (closer to 50% close factor with better health-factor handling, optional full liquidation when HF < 0.95).
+   - v3: stable-rate borrowing was deprecated/disabled on most markets (v2 had it as a first-class feature).
+
+6. Governance / deployments
+   - v3 launched on more chains (Arbitrum, Optimism, Base, Metis, Scroll, Gnosis, BNB, etc.) — v2 only ever ran on Ethereum, Polygon, Avalanche.
+   - v2 markets on Ethereum still exist but are in wind-down mode; new deposits are generally pointed at v3.
+
+TL;DR: v3 = v2 + E-Mode + Isolation Mode + supply/borrow caps + cheaper gas + cross-chain Portals. If you're choosing today, use v3 unless you specifically need a v2-only market.
+
+[OUTCOME]
+Educational question answered without any tool calls. Zero MCP surface area touched, no preflight or setup skill invocation needed.
+
+[OBSERVATIONS]
+- ux: Clean — agent correctly identified this as a no-tool question. No spurious calls to compare_yields or similar that wouldn't have answered the question anyway.
+- feature_gaps: None relevant. VaultPilot has no "explain protocol" or "protocol_info" tool, but that's appropriate — protocol education isn't its job. Could be a minor nice-to-have to have an `explain_protocol` or doc-lookup tool that returns canonical/curated info, but adding it risks bloat and stale data.
+- security_notes: No security surface touched. No tx prep, no signing, no key handling. Worth noting: a compromised MCP could still inject a `VAULTPILOT NOTICE` block on an unrelated tool call, but since no tool was called here, no injection vector was open.
+- preflight_invoked: No. Correctly skipped — no prepare_*/preview_*/send/pair tool was called, so vaultpilot-preflight skill trigger conditions weren't met.
+- friction_points: None. Single-turn answer, no clarifying questions needed.
+- intent_vs_outcome_mismatch: None. User wanted a conceptual comparison; got a structured conceptual comparison.

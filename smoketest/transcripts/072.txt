@@ -1,0 +1,29 @@
+SCRIPT_ID: 072
+CATEGORY: portfolio
+CHAIN: all
+SCRIPT: What's my PnL this month?
+========================================
+[USER]
+What's my PnL this month?
+
+[PLAN]
+Read-only PnL question, no Ledger required. Resolve "my wallet" via get_demo_wallet (auto-fresh-install demo mode), then call get_pnl_summary with period=30d (closest preset to "this month"; ytd would over-report since today is 2026-04-28). Stop at 8 calls. No prepare_*/send_*; preflight skill not in scope.
+
+[TOOL_CALLS]
+1. get_demo_wallet | args: {} | result: demoActive=true, mode=live, reason=auto-fresh-install, active persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28 (no solana/tron/bitcoin cells curated for this persona) | takeaway: Single EVM address resolves "my wallet" unambiguously for this persona; nothing to fold in from other chains.
+2. get_pnl_summary | args: {wallet:"0x8EB8a3b98659Cce290402893d0123abb75E3ab28", period:"30d"} | result: PERMISSION DENIED by harness | takeaway: Even the read-only PnL summary is blocked at the harness layer; no number to report.
+
+[FINAL_REPLY_TO_USER]
+I can't pull your PnL — the harness blocked get_pnl_summary even though it's read-only. Allow that tool (or run /permissions) and I'll retry on the staking-maxi demo wallet (0x8EB8...ab28) with a 30-day window.
+
+[OUTCOME]
+status: impossible
+reason: Harness denied get_pnl_summary on the resolved demo wallet, so no PnL figure could be produced.
+
+[OBSERVATIONS]
+- ux: "This month" is ambiguous against the tool's preset enum — 30d is rolling, ytd is calendar-year, neither is calendar-MTD. Worth either adding an "mtd" period or documenting the mapping in the tool description so the agent doesn't have to guess.
+- feature_gaps: staking-maxi persona has no Solana/TRON/Bitcoin cells curated, so a multi-chain PnL demo on this persona is single-chain by construction; consider filling those cells or steering the agent to whale/defi-degen for cross-chain PnL scripts.
+- security_notes: No signing-class tools invoked; preflight skill not triggered (correctly — read-only path). No CHECKS PERFORMED block expected.
+- preflight_invoked: no (read-only, no prepare_* in flight)
+- friction_points: get_pnl_summary denied by harness despite being a pure read tool with no key material in scope; this is the same pattern seen on list_contacts / get_ledger_status in 001 — read-only tools getting caught in the same default-deny net as signing tools.
+- intent_vs_outcome_mismatch: yes — user asked a one-shot read question, got a permission wall instead of a number.

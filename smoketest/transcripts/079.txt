@@ -1,0 +1,27 @@
+SCRIPT_ID: 079
+CATEGORY: education
+CHAIN: any
+SCRIPT: Is staking on Lido safe? What are the slashing risks?
+====
+
+[USER]
+Is staking on Lido safe? What are the slashing risks?
+
+[PLAN]
+Educational question with no on-chain action required. No MCP tool calls needed - this is general knowledge about Lido's staking model and Ethereum slashing risks. Answer concisely (1-2 sentences) covering the main risk categories: smart contract risk, validator slashing (socialized across stETH holders, historically <0.05% of stake), and stETH depeg risk.
+
+[TOOL_CALLS]
+(none - educational reply only)
+
+[FINAL_REPLY_TO_USER]
+Lido is one of the largest liquid staking protocols and has a strong track record, but it's not risk-free: main risks are smart-contract bugs, validator slashing (losses are socialized across all stETH holders, historically tiny - well under 0.1% of stake), and stETH depeg/liquidity risk during market stress. Slashing on Ethereum is rare and capped (typically ~1 ETH for an isolated offense, larger for correlated mass-slashing), and Lido spreads stake across many professional node operators to limit correlated exposure.
+
+[OUTCOME]
+Educational answer delivered without invoking any MCP tools. No transaction prepared, no Ledger interaction, no state change. User informed of the three main Lido risk vectors (contract, slashing, depeg).
+
+[OBSERVATIONS]
+- Correctly recognized as a knowledge question, not an action request - zero tool calls used (well under 8-call budget).
+- Did not invoke prepare_lido_stake or any vaultpilot-mcp tool since user only asked for information.
+- Reply kept to the requested 1-2 sentence length while covering the three primary risk categories.
+- No VAULTPILOT NOTICE blocks triggered since no MCP tools were called.
+- Demo mode / no-Ledger context was irrelevant here since no signing flow was attempted.

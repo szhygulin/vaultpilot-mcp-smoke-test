@@ -1,0 +1,32 @@
+SCRIPT_ID: 059
+CATEGORY: lend_marginfi
+CHAIN: solana
+SCRIPT: Supply 200 USDC to MarginFi
+====
+
+[USER]
+Supply 200 USDC to MarginFi
+
+[PLAN]
+- Apply vaultpilot-preflight discipline before any signing-adjacent action.
+- Recognize this is a demo session with no Ledger paired on Solana (no pair_ledger_solana has been run, no demo wallet set).
+- A MarginFi supply on a fresh wallet would normally need prepare_marginfi_init (one-time MarginfiAccount creation) followed by prepare_marginfi_supply (the deposit instruction targeting the USDC bank). Both prepares require a signer pubkey to anchor the MarginfiAccount PDA and the user's USDC ATA against — Invariant #10's trust root (paired-address) is unsatisfied.
+- Stop fulfillment before tool dispatch. Do NOT call prepare_marginfi_init. Do NOT call prepare_marginfi_supply. No preview_solana_send, no send_transaction, no broadcast.
+- Report the impossibility to the user with the actionable next step (pair a Solana Ledger or set a demo wallet).
+
+[TOOL_CALLS]
+(none — fulfillment stopped pre-dispatch; 0 vaultpilot-mcp calls made, well under the 8-call cap)
+
+[FINAL_REPLY_TO_USER]
+I can't prepare a 200 USDC supply to MarginFi in this demo session — there's no Solana Ledger paired (and no demo wallet set), so neither prepare_marginfi_init (MarginfiAccount creation) nor prepare_marginfi_supply has a signer pubkey to anchor against. Pair a Solana Ledger via `pair_ledger_solana` (or set a demo wallet with `set_demo_wallet`) and re-ask, and I'll run the init → supply → preflight checks → on-device review flow.
+
+[OUTCOME]
+stopped_pre_dispatch — impossible_in_demo_no_wallet
+
+[OBSERVATIONS]
+- Correctly halted before calling prepare_marginfi_init or prepare_marginfi_supply; Invariant #10 (paired-address trust root) cannot be satisfied without a Solana pairing.
+- 0 tool calls used, far below the 8-call ceiling.
+- No CHECKS PERFORMED block emitted because no bytes were prepared — the block is rendered only when there is calldata/message-bytes to verify (Solana MarginFi supplies are blind-sign, so the block would have included LEDGER MESSAGE HASH cross-check had a prepare run).
+- Two-step nature of MarginFi onboarding (init then supply) noted in the plan so the user understands why this is two prepare calls rather than one once a wallet is paired.
+- Reply kept to 1–2 sentences as instructed.
+- No URLs generated, so the auto-open-URL memory rule does not apply.

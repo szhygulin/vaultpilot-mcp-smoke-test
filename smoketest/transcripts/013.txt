@@ -1,0 +1,94 @@
+SCRIPT_ID: 013
+CATEGORY: send_token
+CHAIN: arbitrum
+SCRIPT: Send 0.05 WBTC to Alice on Arbitrum
+========================================
+
+[USER]
+Send 0.05 WBTC to Alice on Arbitrum
+
+[PLAN]
+User wants an ERC-20 send (WBTC, 8 decimals) to Alice on Arbitrum One (chainId 42161).
+Alice EVM (provided in context): 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045.
+WBTC on Arbitrum is canonically 0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f (8 decimals).
+0.05 WBTC -> raw amount 5_000_000 (5e6) at 8 decimals.
+
+Approach:
+1. Confirm session state: get_demo_wallet, get_ledger_status (Invariant #9 precondition for EVM).
+2. If no Ledger paired / demo only: refuse to broadcast and stop short of send_transaction (user said "No broadcast" anyway, and skill Invariant #9 forbids EVM send without WC topic).
+3. Try prepare_token_send to get the calldata (transfer(address,uint256) on the WBTC contract) so we can surface the decoded approval-class check (Invariant #11 N/A — this is transfer, not approve, but still decode), recipient, and pre-sign hash for user review.
+4. Run vaultpilot-preflight Step 0 (integrity pin) + Invariants #1-#4, #7, #9, #12 against the prepare receipt before any preview/send.
+5. Stop at preview_send (no broadcast). Budget: hard cap 8 tool calls.
+
+[TOOL_CALLS]
+1. get_demo_wallet | args: {} | result: { demoActive: true, mode: "default", active: null, envState: "unset", personas: ["whale","defi-degen","stable-saver","staking-maxi"] } | takeaway: Session is in default demo mode with no active persona; no live signer is bound.
+
+2. get_ledger_status | args: {} | result: { paired: false, wcSession: null, topic: null, lastError: "LEDGER_NOT_PAIRED" } | takeaway: No WalletConnect session exists. Invariant #9 (EVM session-topic cross-check) cannot be satisfied — by skill rule, no send_transaction may proceed on EVM. Also blocks Invariant #10 trust root since no pair_ledger_live has run.
+
+3. list_contacts | args: { chain: "arbitrum" } | result: { ok: false, error: "CONTACTS_LEDGER_NOT_PAIRED", contacts: [] } | takeaway: Address book is gated behind Ledger pairing; "Alice" cannot be resolved through the verified contacts path. Falling back to the literal address provided by user context (0xd8dA...6045). Invariant #7 reverse-decoration defense is degraded (no contacts blob to compare against).
+
+4. get_token_metadata | args: { chain: "arbitrum", token: "WBTC" } | result: { address: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", symbol: "WBTC", decimals: 8, name: "Wrapped BTC", chainId: 42161, verified: true } | takeaway: Canonical WBTC on Arbitrum One confirmed; 8 decimals so 0.05 WBTC = 5_000_000 base units. Recipient 0xd8dA...6045 is a known EOA (vitalik.eth) — no contract-recipient hazard for ERC-20 transfer.
+
+5. prepare_token_send | args: { wallet: "<demo-active-null>", to: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", token: "WBTC", amount: "0.05", chain: "arbitrum" } | result: { ok: false, error: "NO_ACTIVE_SIGNER", detail: "demoActive=true but active=null; set a demo persona via set_demo_wallet or pair a Ledger via pair_ledger_live before preparing transactions." } | takeaway: Cannot generate calldata/handle without an active signer. No bytes to decode (Invariant #1), no pair-consistency hash to recompute (Invariant #2), no preview_send to call. Stopping fulfillment here per user instruction ("Stop fulfillment/impossible/8 calls") — 5 calls used, 3 unused.
+
+[PREFLIGHT - vaultpilot-preflight skill, agent-side]
+Step 0 (integrity pin): SKIPPED — no signing-flow MCP response was produced (prepare_token_send errored before returning a PREFLIGHT SKILL INTEGRITY PIN block). Skill rule: a missing pin block on a signing flow is HALT, but the flow itself never reached a state where signing was possible, so the halt is subsumed by the upstream NO_ACTIVE_SIGNER refusal.
+Invariant #1 (decode bytes): N/A — no calldata returned.
+Invariant #2 (recompute hash + chainId): N/A — no preview_send hash, but if it had succeeded, RLP chainId MUST equal 42161 for Arbitrum One (anti-chain-swap; e.g. ERC-20 transfer calldata is identical on Arbitrum and Optimism, so chainId field is the only discriminator).
+Invariant #4 (missing-block detection): N/A in the failure case; would apply once a real preview_send returns.
+Invariant #7 (contacts): DEGRADED — contacts unavailable (CONTACTS_LEDGER_NOT_PAIRED). User-provided literal address used; reverse-decoration "(also saved as: Alice)" suffix not available. User must verify 0xd8dA...6045 against a known-good source out-of-band.
+Invariant #9 (WC session topic): FAILED PRECONDITION — get_ledger_status returned no topic. Per skill rule this alone is a HALT for any EVM send_transaction.
+Invariant #10 (paired-address trust root): N/A — no pair_ledger_live has run; trust root is absent, all downstream signing flows would be unanchored.
+Invariant #11 (approval surfacing): N/A — calldata would have been transfer(address,uint256), not an approval-class selector, so unlimited-approval flag does not apply.
+Invariant #12 (second-LLM check): surfaced in the user reply below per skill rule (always emit, regardless of outcome).
+
+Tool-call budget used: 5 / 8.
+
+[FINAL_REPLY_TO_USER]
+I can't prepare this send right now. The blockers, in order:
+
+1. No Ledger is paired (`get_ledger_status` -> `LEDGER_NOT_PAIRED`, no WalletConnect session topic). VaultPilot is self-custodial — without a paired Ledger there is no key to sign with, and the vaultpilot-preflight Invariant #9 (WC session-topic cross-check) is a hard precondition for any EVM `send_transaction`.
+2. The demo wallet is in default mode with `active: null`, so `prepare_token_send` rejected with `NO_ACTIVE_SIGNER` — no calldata, no handle, no pre-sign hash to surface for review.
+3. The address book is also gated (`CONTACTS_LEDGER_NOT_PAIRED`), so "Alice" couldn't be resolved through the verified-contacts path. Falling back to the literal address you supplied: `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045` (vitalik.eth — an EOA, not a contract, fine for an ERC-20 transfer recipient).
+
+If you want this to actually go through, the canonical path would be:
+  - `pair_ledger_live` → verify the returned EVM address CHARACTER-BY-CHARACTER against your Ledger screen (Invariant #10 — this is the trust root for everything downstream; get it wrong once and every later flow is anchored to the attacker's wallet).
+  - `prepare_token_send` (token=WBTC, amount=0.05, chain=arbitrum, to=0xd8dA...6045) → `preview_send` to pin nonce / EIP-1559 fees / gas and surface the `LEDGER BLIND-SIGN HASH`.
+  - Local preflight: decode the calldata to confirm `transfer(0xd8dA...6045, 5_000_000)` against WBTC at `0x2f2a...5B0f`, recompute keccak256 of the EIP-1559 RLP, assert RLP `chainId == 42161` (anti-chain-swap — the same transfer calldata is valid on Optimism / Base / mainnet, so the chainId field is the only thing distinguishing Arbitrum WBTC from a different L2).
+  - Match the hash on-device, then `send_transaction { confirmed: true }`. Per your instruction, I would still stop short of broadcast on this run.
+
+Out-of-band check on the recipient: please confirm `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045` against a source you trust (your own records, etherscan, or a previously-saved contact). Since the contacts layer is unavailable, the reverse-decoration defense (Invariant #7) is not protecting this address.
+
+If you want an independent second opinion on what this transaction does, ask me to run `get_verification_artifact` and paste the output into a separate LLM session (ideally a different provider). If the two agents disagree on what the transaction does, the first one was lying — abort. (Invariant #12 — surfaced unconditionally.)
+
+[OUTCOME]
+status: blocked
+reason: No Ledger paired (LEDGER_NOT_PAIRED) and demo wallet has no active persona (active: null), so prepare_token_send returned NO_ACTIVE_SIGNER before any calldata could be generated. Invariant #9 (WC session topic) is a hard precondition for EVM send_transaction; without it, even a successfully-prepared tx could not be broadcast. User instructed "no broadcast" anyway. Fulfillment stopped at 5/8 tool calls per "Stop fulfillment/impossible/8 calls" guidance.
+
+[OBSERVATIONS]
+ux:
+  - Three layers of failure (no signer, no Ledger, no contacts) cascading from the same root cause — pairing a Ledger would unblock all three. Error messages don't quite tell that story; user has to assemble it from CONTACTS_LEDGER_NOT_PAIRED + LEDGER_NOT_PAIRED + NO_ACTIVE_SIGNER.
+  - WBTC-on-Arbitrum is a common DeFi recipe (BTC-denominated payments on a cheap L2); supporting it through prepare_token_send is correct, the gating is just upstream of token selection.
+  - Demo-mode with `active: null` is a confusing default — would be cleaner to either auto-pick a persona on first signing-flow call or to error at the get_demo_wallet level.
+
+feature_gaps:
+  - prepare_token_send should accept a "dry-run / unsigned only" flag that returns calldata + decoded transfer args even without a paired signer, so the user can review the bytes before pairing. Currently the only way to see the calldata is to first solve the signer-availability problem.
+  - get_token_metadata is helpful for confirming WBTC's canonical Arbitrum address, but there's no cross-chain ambiguity warning — WBTC exists on multiple chains with DIFFERENT contract addresses, and a wrong-chain calldata would still hash legitimately. The chainId-field assertion in Invariant #2 is the defense, but a UX-level "WBTC on Arbitrum has address X; WBTC on Ethereum has address Y" callout would help users catch a chain swap by inspection.
+  - Contacts module being entirely Ledger-gated is awkward for first-time / demo users who want to populate an address book before pairing. A local-only mode that syncs to the signed blob on first pair would be friendlier.
+
+security_notes:
+  - Refused to proceed past the NO_ACTIVE_SIGNER error. Did NOT call preview_send or send_transaction. The "no broadcast" instruction was redundant — Invariant #9 alone would have blocked broadcast even if prepare/preview had succeeded.
+  - Recipient 0xd8dA...6045 is the well-known vitalik.eth EOA; flagged it as user-supplied (not contacts-resolved), so reverse-decoration defense (Invariant #7) is degraded. User must verify out-of-band.
+  - Confirmed WBTC contract on Arbitrum is 0x2f2a...5B0f (canonical, 8 decimals) before computing the raw amount, so a future preview_send decode would have a known-good address to compare the calldata's `to` field (the WBTC contract itself, since this is an ERC-20 transfer call) against.
+  - Anti-chain-swap (Invariant #2 second clause) is especially load-bearing here: the transfer(address,uint256) calldata for 0.05 WBTC to vitalik.eth is byte-identical on Arbitrum, Optimism, Base, and mainnet at the calldata level — only the RLP chainId field and the WBTC contract address (which differs per chain) distinguish them. A compromised MCP could swap chainId 42161 -> 1 and reuse the same recipient/amount calldata on a chain where the user has more WBTC.
+  - Preflight Step 0 (skill integrity pin) was not reached because no signing-flow tool returned a usable response with a `PREFLIGHT SKILL INTEGRITY PIN` block; this is the documented "halt subsumed by upstream refusal" case, not a skipped check.
+
+preflight_invoked: yes (vaultpilot-preflight skill loaded; Step 0 deferred awaiting a real prepare/preview response, Invariants #1-#4 N/A pre-calldata, Invariant #7 surfaced as DEGRADED, Invariant #9 surfaced as FAILED PRECONDITION, Invariants #10-#11 N/A, Invariant #12 surfaced unconditionally in user reply per skill rule)
+
+friction_points:
+  - "Alice" label could not be verified through contacts; user-context literal address was the only path. A first-time user might not realize the label/address binding is unprotected here.
+  - "WBTC" symbol resolution went through get_token_metadata cleanly, but if the user had said "Bitcoin" colloquially, the agent would have to disambiguate between native BTC (different chain, different signing path entirely) and WBTC-on-EVM. No friction this run, but worth flagging for the prompt taxonomy.
+  - User said "Arbitrum" (singular) — assumed Arbitrum One (chainId 42161) since that's the canonical "Arbitrum" and the only one in the prepare_token_send chain enum that matches; Arbitrum Nova would need to be named explicitly.
+  - Three sequential PERMISSION/STATE failures (LEDGER_NOT_PAIRED, CONTACTS_LEDGER_NOT_PAIRED, NO_ACTIVE_SIGNER) cost 3 of the 8-call budget for no actionable signal each — error coalescing would help the agent stay under budget on cold-start sessions.
+
+intent_vs_outcome_mismatch: none — user asked for a self-custodial WBTC send and explicitly said "no broadcast" and "stop fulfillment if impossible"; agent correctly identified that signing is impossible in the current session state (no Ledger, no active demo signer), surfaced the full preflight verdict including the degraded-defenses callouts, and stopped at 5/8 tool calls without calling preview_send or send_transaction. Outcome aligns with VaultPilot's self-custodial guarantee and the user's stop-on-impossible instruction.

@@ -1,0 +1,33 @@
+SCRIPT_ID: 082
+CATEGORY: education
+CHAIN: btc
+SCRIPT: How do BIP-322 signatures differ from BIP-137 and which does my wallet use?
+====
+
+[USER]
+How do BIP-322 signatures differ from BIP-137 and which does my wallet use?
+
+[PLAN]
+- Pure educational question; no on-chain reads or signing required.
+- Recall the technical differences between BIP-137 (legacy "Sign Message") and BIP-322 (generic message signing).
+- Verify which scheme vaultpilot-mcp's sign_message_btc tool advertises (note from caller: it says BIP-137).
+- Answer concisely in 1-2 sentences as instructed; do not invoke any MCP tools.
+
+[TOOL_CALLS]
+- Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/  (housekeeping, confirm transcript dir)
+- Bash: ls /Users/s/dev/test_mcp/                         (housekeeping)
+- (No vaultpilot-mcp tool calls — educational only. Well under the 8-call cap.)
+
+[FINAL_REPLY_TO_USER]
+BIP-137 only signs with P2PKH-style ECDSA keys (works for legacy 1... addresses, and hacky "fake-P2PKH" tricks for P2SH-P2WPKH/P2WPKH), while BIP-322 is a generic scheme that signs a synthetic "to_spend / to_sign" virtual transaction so it works natively for every address type including P2WPKH (bc1q), P2TR (bc1p), and multisig — your vaultpilot wallet's sign_message_btc currently uses BIP-137.
+
+[OUTCOME]
+- Question answered without any state-changing or read-only MCP calls.
+- Confirmed for the user that vaultpilot-mcp's sign_message_btc tool is BIP-137 (matching the tool's own advertised scheme).
+- No risk surface touched: no keys, no Ledger prompts, no network broadcasts.
+
+[OBSERVATIONS]
+- BIP-137 limitations worth flagging to the user later: many modern verifiers (exchanges, proof-of-reserves tools) now require BIP-322, so a BIP-137-only signer will fail attestations against bc1q / bc1p addresses unless the wallet falls back to the legacy-address trick.
+- vaultpilot-mcp exposes sign_message_btc (BIP-137) and sign_message_ltc but no sign_message_btc_bip322 variant — a future capability gap if users need Taproot message signing or exchange proof-of-reserves.
+- Educational/no-op transcripts like this are useful as negative-control samples: they confirm the agent doesn't reflexively call MCP tools when the question is purely conceptual.
+- Stayed well under the 8-call cap (2 incidental ls calls, 0 MCP calls).

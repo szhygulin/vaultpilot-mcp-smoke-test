@@ -1,0 +1,75 @@
+SCRIPT_ID: 036
+CATEGORY: stake_evm
+CHAIN: ethereum
+SCRIPT: Stake 1 ETH with Rocket Pool to receive rETH
+====
+
+[USER]
+Stake 1 ETH with Rocket Pool to receive rETH
+
+[PLAN]
+1. Apply vaultpilot-preflight skill (loaded — sets agent-side invariants for any
+   prospective signing flow).
+2. Investigate whether vaultpilot-mcp exposes a Rocket Pool prepare tool.
+   - Search the deferred-tool catalog for `prepare_rocket*` / `prepare_reth*` /
+     anything Rocket-Pool-shaped.
+   - Survey the EVM-staking-adjacent prepare_* surface: prepare_lido_stake,
+     prepare_lido_unstake, prepare_eigenlayer_deposit. Lido covers stETH; no
+     Rocket Pool / rETH analogue is present.
+   - Consider whether a generic approach exists: VaultPilot does NOT expose an
+     arbitrary `prepare_evm_contract_call` / raw-calldata escape hatch. The
+     only EVM prepare_* tools are protocol-specific (Aave, Compound, Curve,
+     Lido, EigenLayer, Morpho, Safe, Uniswap, WETH-unwrap, revoke-approval,
+     swap, native/token send). None of those will mint rETH from a 1 ETH
+     deposit to RocketDepositPool.
+   - Workaround possibility: prepare_swap (LiFi) could route ETH→rETH via a
+     DEX/aggregator, but that's a SWAP, not a Rocket-Pool stake. It does not
+     mint fresh rETH from the protocol's deposit pool, so the protocol-level
+     exposure profile (rate, deposit-pool-cap interaction) differs. Not the
+     same action the user asked for; flag rather than silently substitute.
+3. Conclude: out-of-scope for current MCP surface — stop fulfillment, no
+   prepare_* call, no preview, no send_transaction. Zero tool calls.
+
+[TOOL_CALLS]
+(none — 0 tool calls)
+
+Investigated tool catalog only (no MCP calls executed):
+  - Searched deferred-tool list for prepare_rocket* / prepare_reth* — no match.
+  - Confirmed EVM prepare_* surface: aave_*, compound_*, curve_add_liquidity,
+    eigenlayer_deposit, lido_stake/unstake, morpho_*, safe_*, uniswap_*,
+    weth_unwrap, swap (LiFi), native_send, token_send, revoke_approval.
+  - No prepare_rocketpool_stake, no generic raw-calldata prepare tool.
+
+[FINAL_REPLY_TO_USER]
+VaultPilot doesn't expose a Rocket Pool prepare tool — only Lido (prepare_lido_stake) and EigenLayer are wired up for ETH staking, and there's no generic raw-calldata escape hatch to call RocketDepositPool.deposit() directly. Want me to stake via Lido for stETH instead, or swap ETH→rETH on a DEX (different exposure profile than a fresh Rocket Pool deposit)?
+
+[OUTCOME]
+stop_fulfillment_impossible (Rocket Pool not supported by vaultpilot-mcp; 0
+prepare_* calls; preflight skill loaded but not exercised because no signing
+flow was initiated).
+
+[OBSERVATIONS]
+- Catalog gap: Lido + EigenLayer present, Rocket Pool absent. Worth flagging
+  upstream — Rocket Pool is the second-largest Ethereum LST by TVL after
+  Lido, and rETH is a common request for users who want a non-Lido LST for
+  decentralization/diversification reasons.
+- The vaultpilot-mcp prepare_* surface is closed-set per protocol. There is
+  no `prepare_evm_contract_call` / raw-calldata tool, which is the right
+  security posture (each prepare_* tool ships its own decoder + cross-check
+  logic that vaultpilot-preflight invariants depend on) but it means
+  unsupported protocols are hard-stops, not workaroundable.
+- prepare_swap (LiFi) could surface an ETH→rETH route via DEX aggregation,
+  but that is semantically a swap, not a Rocket Pool stake — different
+  exposure profile (secondary-market rETH price vs. protocol deposit rate;
+  no interaction with deposit-pool cap). Flagged as an option to the user
+  rather than silently substituted.
+- prepare_lido_stake (stETH) is the closest in-protocol substitute by
+  intent ("stake ETH, receive a liquid staking token") — surfaced as the
+  primary alternative.
+- Zero-tool-call outcome is the correct shape here: invoking any prepare_*
+  for a different protocol without the user's redirected consent would be
+  a bait-and-switch.
+- Preflight skill (vaultpilot-preflight v5) loaded successfully but no
+  signing-flow invariants triggered — the skill scope (Invariant #1 onward)
+  applies to prepare_*/preview_*/send_transaction calls; none were made.
+====

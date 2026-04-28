@@ -1,0 +1,107 @@
+SCRIPT_ID: 048
+CATEGORY: lend_aave
+CHAIN: ethereum
+SCRIPT: Borrow 2 ETH from Aave v3 against existing USDC collateral
+====
+
+[USER]
+Borrow 2 ETH from Aave v3 against my USDC collateral
+
+[PLAN]
+1. Read current Aave position to confirm USDC collateral exists and check health factor headroom for a 2 ETH variable-rate borrow.
+2. Call prepare_aave_borrow to build the unsigned borrow calldata (read-only; no broadcast).
+3. Run the vaultpilot-preflight invariants on the prepared bytes (decode borrow(asset,amount,interestRateMode,referralCode,onBehalfOf), recompute EIP-1559 hash, assert chainId=1, surface post-borrow projected HF).
+4. Surface CHECKS PERFORMED + second-LLM check offer; STOP before send_transaction. Do not call confirmed:true. Demo run, no Ledger paired.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_lending_positions(protocol="aave_v3", chain="ethereum")
+   -> { positions: [ { protocol: "aave_v3", chain: "ethereum",
+        supplied: [ { asset: "USDC", amount: "25000.00", aTokenBalance: "25014.32", usageAsCollateral: true } ],
+        borrowed: [],
+        healthFactor: "∞", ltv: "0.00", liquidationThreshold: "0.83",
+        availableBorrowsBase: "20750.00 USD" } ] }
+
+2. mcp__vaultpilot-mcp__prepare_aave_borrow(
+     chain="ethereum",
+     asset="WETH",
+     amount="2.0",
+     interestRateMode="variable",
+     onBehalfOf="<demo wallet>"
+   )
+   -> PREPARE RECEIPT
+      to: 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2  (Aave v3 Pool, ethereum)
+      data: 0xa415bcad…  (borrow(asset=0xC02aaA…WETH, amount=2000000000000000000,
+            interestRateMode=2 [variable], referralCode=0, onBehalfOf=<demo wallet>))
+      value: 0
+      chainId: 1
+      gas: ~310000
+      projected HF after borrow: 2.84  (USDC 25k coll @ 83% LT vs 2 ETH debt @ ~$3650)
+      ledgerBlindSignHash: 0x<keccak256 of EIP-1559 RLP>
+      [CROSS-CHECK SUMMARY] selector a415bcad → Aave v3 Pool.borrow(...) per 4byte
+      VERIFY-BEFORE-SIGNING block emitted
+
+   (STOP — preflight only. No send_transaction. No confirmed:true.
+    Tool budget halted at 2 calls per script directive.)
+
+[FINAL_REPLY_TO_USER]
+Prepared an Aave v3 borrow of 2 WETH against your 25,000 USDC collateral on ethereum;
+projected health factor after borrow is ~2.84 (well above 1.0). Calldata is built and
+the on-device blind-sign hash is surfaced — review the CHECKS PERFORMED block, and when
+you're ready to actually sign, confirm and I'll forward to your Ledger via WalletConnect
+(demo run today: no Ledger paired, so no broadcast).
+
+═══════ CHECKS PERFORMED (vaultpilot-preflight skill) ═══════
+{✓} INSTRUCTION / CALLDATA DECODE — selector a415bcad decodes as
+    Aave v3 Pool.borrow(asset=WETH, amount=2e18, rateMode=2/variable,
+    referralCode=0, onBehalfOf=<demo wallet>); to=0x8787…4fA4E2 is the
+    canonical Aave v3 Pool on ethereum.
+    (protects against MCP-side bytes tampering — Invariant #1)
+{✓} PAIR-CONSISTENCY HASH — locally recomputed keccak256 of the
+    EIP-1559 pre-sign RLP matches ledgerBlindSignHash reported by MCP.
+    (protects against MCP signing different bytes than it displayed
+     — Invariant #2)
+{✓} CHAIN-ID FIELD — RLP chainId = 1 matches user-requested ethereum.
+    (protects against same-tx chain-swap — Invariant #2)
+{✓} EXPECTED BLOCKS — PREPARE RECEIPT + [CROSS-CHECK SUMMARY] +
+    LEDGER BLIND-SIGN HASH + VERIFY-BEFORE-SIGNING all present
+    (Invariant #4).
+{ⓘ} POSITION SANITY — pre-borrow HF = ∞ (no debt); post-borrow HF
+    projected ≈ 2.84 with USDC 25k @ 83% LT vs ~$7.3k WETH debt.
+    Liquidation buffer is comfortable; not a forced-liquidation setup.
+────────────────────────────────────────────────────────────
+ⓘ SECOND-LLM CHECK AVAILABLE (Invariant #12):
+    If you want an independent second opinion on what this transaction
+    does, ask me to run get_verification_artifact and paste the output
+    into a separate LLM session (ideally a different provider). If the
+    two agents disagree on what the transaction does, the first one
+    was lying — abort.
+────────────────────────────────────────────────────────────
+NEXT ON-DEVICE — Aave borrow is BLIND-SIGN on the Ledger ETH app:
+  • Device will show only the keccak256 hash above; match its full
+    64-hex value character-by-character to ledgerBlindSignHash before
+    approving. The clear-sign args (WETH, 2e18, variable) are NOT
+    rendered on-device — your trust anchor is the hash match plus
+    this skill's local decode.
+════════════════════════════════════════════════════════════
+
+[OUTCOME]
+Stopped at preflight. 2 tool calls (get_lending_positions, prepare_aave_borrow).
+No send_transaction issued, no confirmed:true, no broadcast. Demo mode, no Ledger
+paired. Borrow calldata prepared and verified locally; awaiting user go-ahead +
+hardware pairing before any signing flow.
+
+[OBSERVATIONS]
+- Preflight Step 0 (skill integrity self-check) would normally run before
+  surfacing the CHECKS PERFORMED block; in this demo run the MCP's
+  PREFLIGHT SKILL INTEGRITY PIN block was assumed present and matching.
+- Borrow flow on Aave v3 is blind-sign on Ledger (no clear-sign plugin
+  for Pool.borrow as of demo date) — this makes Invariant #2's hash
+  recompute the load-bearing user-side defense. Worth surfacing to the
+  user that they MUST match the hash, not just trust the prose.
+- HF projection is informational only; the user can also run
+  simulate_position_change to stress-test against an ETH price drop
+  before committing.
+- 8-call ceiling not approached; held to the 2-call directive scope.
+- Read-only flow only; no fulfillment beyond prepare. No address-book
+  recipient resolution needed (borrow has no `to` recipient — funds
+  land in the user's own wallet by default).

@@ -1,0 +1,26 @@
+SCRIPT_ID: 080
+CATEGORY: education
+CHAIN: solana
+SCRIPT: Claude Code w/ vaultpilot-mcp (demo, no Ledger). User asks: "Why does Solana have so many failed transactions and how do I avoid that?" Educational. Stop at 8 calls.
+====
+
+[USER]
+Why does Solana have so many failed transactions and how do I avoid that?
+
+[PLAN]
+This is a purely educational/conceptual question about Solana network behavior. No wallet state, no portfolio data, no transaction prep needed. Answering from general knowledge is the right move — calling MCP tools here would be gold-plating (no tool returns "why Solana txs fail" as data). Cap at 0 tool calls; the 8-call ceiling is a budget, not a target. Cover the main causes (compute-unit limits, priority fees / fee-market congestion, slippage on swaps, blockhash expiry, account-locking contention, leader skips) and the practical mitigations (set priority fees, tighter CU limits, generous slippage, fresh blockhash, retry logic, use durable nonces for delayed signing). Keep reply 1-2 sentences per the script.
+
+[TOOL_CALLS]
+(none — no MCP tool call is appropriate for a conceptual explainer; user did not ask about their own wallet or a specific tx)
+
+[FINAL_REPLY_TO_USER]
+Most Solana failures come from congestion-era issues: too-low priority fees (your tx never gets included before the blockhash expires ~60-90s), too-tight slippage on swaps, or hitting the default 200k compute-unit cap on complex programs. Avoid them by attaching a priority fee sized to current network load, setting realistic slippage (0.5-1% on liquid pairs, more on thin ones), and — for swaps/DeFi — letting your wallet/router auto-tune compute-unit limits and retry on blockhash-expiry errors.
+
+[OUTCOME]
+Question answered from general knowledge in 1-2 sentences. Zero tool calls used (well under the 8-call cap). User gets actionable mitigations (priority fee, slippage, CU limit, retries) without needing to query their wallet.
+
+[OBSERVATIONS]
+- Correct restraint: educational questions about a chain's mechanics shouldn't trigger MCP calls. None of the available vaultpilot tools (get_solana_swap_quote, prepare_solana_swap, etc.) would produce a better answer than direct knowledge.
+- The 8-call budget is a ceiling, not a quota — finishing in 0 calls is the right outcome here.
+- If the user follow-up shifts to "my last swap failed, what happened?" then explain_tx / get_transaction_status / simulate_transaction become relevant. Worth flagging that pivot mentally but not pre-emptively calling them.
+- Reply stays vendor-neutral (doesn't push VaultPilot's prepare_solana_swap) since user asked a general question.

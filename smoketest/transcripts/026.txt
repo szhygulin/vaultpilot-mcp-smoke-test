@@ -1,0 +1,47 @@
+SCRIPT_ID: 026
+CATEGORY: swap_cross
+CHAIN: ethereum->base
+SCRIPT: Bridge 2000 USDC from Ethereum to Base via LiFi (preflight only, no broadcast)
+====
+
+[USER]
+Bridge 2000 USDC from Ethereum to Base via LiFi
+
+[PLAN]
+- Cross-chain LiFi bridge: fromChain=ethereum (1), toChain=base (8453), token=USDC, amount=2000.
+- Trigger Invariant #6 (cross-chain LiFi): after prepare_swap returns calldata, decode the
+  LiFi BridgeData tuple and verify destinationChainId against this skill's ground-truth table.
+- Apply Invariant #1 (decode calldata locally — startBridgeTokensVia* / swapAndStartBridgeTokensVia*),
+  Invariant #2 (recompute EIP-1559 keccak256 + assert RLP chainId == 1 for source-chain tx),
+  Invariant #11 (USDC approve to LiFi diamond — flag spender + amount, escalate if max uint256),
+  Invariant #9 (WC session topic suffix surfacing if first EVM send of session),
+  Invariant #12 (always surface second-LLM check offer).
+- No on-device signing this run: stop after preflight. Do NOT call send_transaction.
+
+[TOOL_CALLS]
+- (none) — user explicitly requested no broadcast and no fulfillment/impossible/8 calls.
+  Preflight reasoning recorded against the skill's invariants without invoking MCP tools.
+
+[FINAL_REPLY_TO_USER]
+Preflight noted: for a 2000 USDC ETH->Base LiFi bridge I'd decode BridgeData and require
+destinationChainId == 8453 (Base) per Invariant #6, then verify the source-chain RLP chainId
+== 1 and recompute the keccak256 — but per your instructions I am not calling any MCP tools
+and not broadcasting.
+
+[OUTCOME]
+NO_BROADCAST — preflight-only, no MCP tool calls made, no Ledger prompt fired.
+
+[OBSERVATIONS]
+- Invariant #6 ground-truth table confirms ethereum=1, base=8453; a direct ETH->Base LiFi
+  route should encode destinationChainId=8453 with no intermediate-chain bridge involvement
+  (NEAR Intents allowlist not applicable for this pair).
+- Two on-device prompts would normally fire for this flow: (1) ERC-20 approve of USDC to
+  the LiFi diamond spender (Invariant #11 — flag if amount == 2^256-1), then (2) the bridge
+  call itself (clear-sign on the LiFi facet with decoded fields per Invariant #4's clear-sign
+  expected-blocks row).
+- Skill Step 0 (integrity self-check) would gate any actual signing flow; not exercised here
+  because no MCP response was solicited and thus no PIN block to compare against.
+- Cross-chain note: the source tx settles on Ethereum (chainId=1 in RLP); the
+  destinationChainId=8453 lives inside BridgeData, not in the EIP-1559 envelope. Both must
+  be checked independently — the RLP-level Invariant #2 chain-swap defense and the
+  BridgeData-level Invariant #6 destination defense protect different layers.

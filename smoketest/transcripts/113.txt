@@ -1,0 +1,36 @@
+SCRIPT_ID 113
+CATEGORY tx_inspect
+CHAIN solana
+SCRIPT Claude Code w/ vaultpilot-mcp (demo, no Ledger). User asks what a Solana transaction did, given signature 5j9a8sBn3kfPq4xLh7TmRcVw2YzNbXuGdHaEqWp1JfCi. Read-only. explain_tx (does it support Solana?). Stop at 8 calls.
+====
+
+[USER]
+What did this Solana transaction do? 5j9a8sBn3kfPq4xLh7TmRcVw2YzNbXuGdHaEqWp1JfCi
+
+[PLAN]
+1. Confirm explain_tx supports Solana by inspecting its tool description.
+2. Load explain_tx schema and call it with chain=solana, hash=<signature>.
+3. Relay the narrative back to the user verbatim.
+
+[TOOL_CALLS]
+1. ToolSearch query="explain_tx"
+   -> Result: explain_tx description confirms v1 covers EVM, TRON, AND Solana. Hash pattern requires base58 86-88 chars for Solana. Schema not yet loaded for direct call.
+2. ToolSearch query="select:mcp__vaultpilot-mcp__explain_tx"
+   -> Result: Full schema loaded. Confirmed `chain` enum includes "solana" and `hash` regex is ^(0x[a-fA-F0-9]{64}|[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{86,88})$.
+3. (No third call.) Validation check on user-supplied signature:
+   - "5j9a8sBn3kfPq4xLh7TmRcVw2YzNbXuGdHaEqWp1JfCi" length = 44 chars.
+   - Solana signatures are 64 bytes -> 86-88 base58 chars. 44 chars is the shape of a Solana *address* (pubkey), not a signature.
+   - The hash will be rejected by schema validation before reaching the server. Calling explain_tx is guaranteed to InputValidationError; better to flag the malformed input back to the user.
+
+[FINAL_REPLY_TO_USER]
+Yes, explain_tx supports Solana — but the identifier you pasted, "5j9a8sBn3kfPq4xLh7TmRcVw2YzNbXuGdHaEqWp1JfCi" (44 chars), is the shape of a Solana account address, not a transaction signature (signatures are 86-88 base58 chars). Could you paste the full signature from your explorer URL?
+
+[OUTCOME]
+no_tool_call_made — input validation caught client-side; explain_tx does support Solana but the supplied string is too short (44 chars vs required 86-88) so calling would only produce an InputValidationError. Asked user for the correct signature. 2 of 8 call budget used (both ToolSearch).
+
+[OBSERVATIONS]
+- explain_tx tool description and schema both explicitly cover Solana (v1 supports EVM + TRON + Solana; Bitcoin deferred).
+- The hash regex enforces Solana sig length (86-88 b58) at the schema level, so a malformed sig is rejected before any network call — good defense.
+- Easy to confuse Solana addresses (32 bytes -> 43-44 b58) with signatures (64 bytes -> 86-88 b58); worth catching in agent logic before burning a tool call.
+- The user's string starts with "5j9a..." which is plausible-looking but length is the giveaway. A real Solana sig would be roughly twice as long.
+- No Helius / RPC key needed to surface this validation failure — it's purely schema-side.

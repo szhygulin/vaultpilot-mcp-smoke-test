@@ -1,0 +1,73 @@
+SCRIPT_ID: 033
+CATEGORY: stake_evm
+CHAIN: ethereum
+SCRIPT: Stake 5 ETH with Lido on Ethereum mainnet
+====
+
+[USER]
+Stake 5 ETH with Lido on Ethereum mainnet
+
+[PLAN]
+- Resolve active demo wallet (live mode, no Ledger pairing required for prepare).
+- Call prepare_lido_stake with wallet + amountEth=5 to build the unsigned stETH.submit() tx.
+- Apply vaultpilot-preflight invariants on the prepare receipt: Step 0 integrity self-check is N/A here because no signing is performed; preflight surfacing of decoded calldata + cross-check summary still applies.
+- STOP fulfillment after prepare_lido_stake — no preview_send, no send_transaction, no broadcast (per scenario rules).
+- Stay within ~8 tool calls; surface the prepare receipt to the user in compact form per MCP agent-task block.
+
+[TOOL_CALLS]
+1. mcp__vaultpilot-mcp__get_demo_wallet
+   -> demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+2. mcp__vaultpilot-mcp__prepare_lido_stake
+   args: { wallet: "0x8EB8a3b98659Cce290402893d0123abb75E3ab28", amountEth: "5" }
+   -> chain: ethereum
+      to: 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84  (Lido stETH)
+      value: 5000000000000000000 wei (5 ETH)
+      data: 0xa1903eab + 32-byte zero referral
+      decoded.functionName: submit
+      decoded.args.referral: 0x0000000000000000000000000000000000000000
+      simulation.ok: true, returnData=0x...3846f1a40a3ce82e (~4.05 stETH minted preview)
+      gasEstimate: 103642
+      gasCostUsd: 0.13
+      handle: df011221-0057-49f9-92fe-efba385ac461
+      verification.payloadHash: 0x4e793cc24e1277c09d4b69307e03c4ebb73191a0aaf6bcbbb83ae998d67b5ab3
+      verification.payloadHashShort: 4e793cc2
+      verification.humanDecode.signature: submit(address) (source: local-abi)
+      MCP-emitted blocks present:
+        - PREPARE RECEIPT (relay-verbatim args mirror)
+        - VERIFY BEFORE SIGNING (decoded call + decoder URL + hash)
+        - CROSS-CHECK SUMMARY (4byte.directory ✓ pass for `submit`)
+        - AGENT TASK (compact-summary instructions)
+
+Tool-call count: 2 prepare-side calls + 2 ToolSearch loads = 4 (well under the 8-call cap).
+
+[FINAL_REPLY_TO_USER]
+✓ Cross-check passed via 4byte.directory. The server pulled the independent selector signature for `submit`, decoded the calldata against it, and the result re-encodes to the original bytes exactly — every argument matches what's in the transaction. (Out-of-band fallback: the swiss-knife decoder link in the prepare receipt.)
+
+Prepared Lido stake — wrap 5 ETH into stETH via Lido stETH.submit()
+- From: 0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+- To:   0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84 (Lido stETH)
+- Value: 5 ETH (5000000000000000000 wei)
+- Function: submit(address)
+- Amount staked: 5 ETH (referral = 0x000…000, no referrer)
+
+Per smoketest scenario rules I'm STOPPING here without broadcasting. No preview_send, no send_transaction, no Ledger prompt fires. If you wanted to proceed for real you would reply "send" and I'd run preview_send → CHECKS PERFORMED (calldata decode + EIP-1559 RLP hash recompute + chainId=1 assert) → send_transaction with on-device blind-sign hash match.
+
+[OUTCOME]
+- prepare_lido_stake succeeded; unsigned tx built and simulated OK.
+- No broadcast (impossible-by-design for this script: stop after prepare).
+- Preflight invariants partially exercised:
+  - Inv #1 (decode bytes): decoded selector 0xa1903eab → submit(address), args=[zero referral]. ✓
+  - Inv #2 (chainId field): not yet load-bearing — chainId is asserted at preview_send time over the full EIP-1559 RLP, not at prepare time. Recorded as out-of-scope-for-this-stop-point.
+  - Inv #3 (CHECKS PERFORMED block): not emitted — no signing flow reached. Cross-check summary surfaced verbatim instead.
+  - Inv #4 (missing-block detector): expected blocks present (PREPARE RECEIPT, CROSS-CHECK SUMMARY, VERIFY-BEFORE-SIGNING). ✓
+  - Inv #11 (approval surfacing): N/A — calldata is `submit`, not `approve`/`permit`/Permit2.
+  - Inv #12 (second-LLM): not surfaced because no signing is happening this turn; it's an Invariant-#12 "every signing flow" rule and we explicitly aren't signing.
+- Step 0 integrity self-check: N/A this turn — invariant is gated to signing flows ("apply on every signing flow"), and we're stopping before preview_send.
+
+[OBSERVATIONS]
+- prepare_lido_stake correctly emits all four expected blocks (PREPARE RECEIPT, VERIFY BEFORE SIGNING, CROSS-CHECK SUMMARY, AGENT TASK). Solid Lido clear-sign path — Ledger ETH app will clear-sign this via the Lido plugin at signing time, no blind-sign hash needed.
+- value field carries the ETH being staked (Lido stETH.submit is payable; value=amountEth, no ERC-20 transfer leg). Worth confirming the amount on-device matches exactly.
+- referral defaulted to address(0) — fine for first-party stakes; if a referral program were desired the prepare tool would need an arg surface for it (not exposed in current schema).
+- stop-after-prepare workflow is clean: handle is returned but never consumed, no nonce burn, no fee pinning, no WC traffic. Pure read-side dry run.
+- staking-maxi persona is a sensible default for this script — archetype already includes stETH-class flows so 5 ETH is in-character.
+- Tool-call budget honored: 2 MCP calls (well under 8). Two ToolSearch loads were required because deferred tools aren't pre-loaded; this is per-session overhead.

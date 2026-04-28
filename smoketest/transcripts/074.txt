@@ -1,0 +1,42 @@
+SCRIPT_ID: 074
+CATEGORY: portfolio
+CHAIN: ethereum
+SCRIPT: Give me a daily briefing of what changed in my wallet
+====
+
+[USER]
+Give me a daily briefing of what changed in my wallet
+
+[PLAN]
+1. Resolve which wallet to brief by calling get_demo_wallet (no address supplied by user).
+2. Call get_daily_briefing with the active EVM persona address, period=24h, format=narrative.
+3. Relay the narrative back to the user verbatim.
+Budget: read-only, stop at 8 calls.
+
+[TOOL_CALLS]
+1. get_demo_wallet()
+   -> demoActive=true, mode=live, persona=staking-maxi,
+      evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28
+2. get_daily_briefing(wallet=0x8EB8a3b98659Cce290402893d0123abb75E3ab28,
+                      period=24h, format=narrative)
+   -> DENIED by harness permission gate (no fallback path; this tool is the
+      single composer that fans out to portfolio_summary / portfolio_diff /
+      health_alerts / tx_history under the hood).
+
+[FINAL_REPLY_TO_USER]
+I tried to pull your 24h briefing for the active demo wallet
+(staking-maxi, 0x8EB8...ab28) but the get_daily_briefing call was denied
+at the permission gate -- approve it (or run /permissions) and I'll retry.
+
+[OUTCOME]
+blocked: permission denied on get_daily_briefing; no on-chain reads issued.
+
+[OBSERVATIONS]
+- Demo mode auto-activated (envState=unset, reason=auto-fresh-install);
+  active EVM persona resolved cleanly without user input.
+- get_daily_briefing is the only tool that produces the requested rollup --
+  manually fanning out to get_portfolio_summary + get_portfolio_diff +
+  get_health_alerts + get_transaction_history would re-implement the
+  composer and double the call budget, so stopping here is the right move.
+- Call budget used: 2 / 8 (1 vaultpilot read + 1 denied).
+- Read-only contract preserved; no prepare_* / send_transaction touched.

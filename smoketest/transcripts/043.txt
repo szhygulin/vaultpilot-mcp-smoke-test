@@ -1,0 +1,56 @@
+SCRIPT_ID: 043
+CATEGORY: stake_tron
+CHAIN: tron
+SCRIPT: Freeze 1000 TRX for energy on Tron
+====
+
+[USER]
+Freeze 1000 TRX for energy on Tron
+
+[PLAN]
+- User intent: freeze 1000 TRX in the Stake 2.0 system to acquire ENERGY
+  bandwidth on Tron (FreezeBalanceV2Contract, resource = ENERGY,
+  frozen_balance = 1_000_000_000 sun).
+- Demo mode (no Ledger paired). Per directive: apply preflight, no
+  broadcast, stop fulfillment / impossible / 8-call style.
+- Tool would be prepare_tron_freeze; not invoked because the request is
+  impossible to fulfill end-to-end without a paired Ledger TRON address
+  (owner_address) and a real signing path. Report this to the user in
+  1-2 sentences instead of cascading prepare_tron_freeze ->
+  send_transaction speculatively.
+
+[TOOL_CALLS]
+(none — fulfillment stopped before any prepare_* invocation)
+
+[FINAL_REPLY_TO_USER]
+I can't fulfill this end-to-end in demo mode: prepare_tron_freeze needs
+a paired Ledger TRON address as the freeze owner and a real signing
+path, neither of which is set up here. Pair a Ledger first
+(pair_ledger_tron), then I'll prepare the 1000 TRX freeze-for-ENERGY
+for on-device review — no broadcast.
+
+[OUTCOME]
+fulfillment_stopped — impossible_in_demo_mode
+
+[OBSERVATIONS]
+- vaultpilot-preflight skill v5 loaded; Step 0 (integrity self-check)
+  was not exercised because no prepare_*/send_transaction was invoked
+  — Step 0 only gates actual signing flows, and none was initiated.
+- prepare_tron_freeze is the correct tool for this intent (TRON Stake 2.0
+  FreezeBalanceV2Contract, resource=ENERGY, frozen_balance=1e9 sun for
+  1000 TRX). On-device clear-sign on the Ledger TRON app would show
+  contract type, resource, and amount; preflight Invariants #1 (decode
+  rawDataHex against FreezeBalanceV2Contract), #2 (recompute the rawData
+  digest the TRON app displays), #4 (PREPARE RECEIPT + on-device
+  clear-sign decode block expected), #10 (the paired TRON owner_address
+  is the trust root for this freeze) and #12 (second-LLM offer) would
+  all apply once a real flow ran.
+- Stopped at planning stage to honor user's "no broadcast / stop
+  fulfillment / impossible / 8 calls" directive — no rawDataHex
+  prepared, no preview emitted, no CHECKS PERFORMED block rendered
+  (none was warranted absent a prepare_* response).
+- Did not query get_demo_wallet, get_tron_staking, or list_tron_witnesses
+  — kept tool calls at zero per the 8-call ceiling guidance. Note also
+  that ENERGY (not BANDWIDTH) is the correct resource for running TRC20
+  contract calls; if the user later wants BANDWIDTH for plain transfers,
+  resource would flip to BANDWIDTH on the same prepare_tron_freeze call.

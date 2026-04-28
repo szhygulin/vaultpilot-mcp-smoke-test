@@ -1,0 +1,54 @@
+SCRIPT_ID: 108
+CATEGORY: strategy
+CHAIN: any
+SCRIPT: Share my staking strategy as a template that Bob can import
+====
+
+[USER]
+Share my staking strategy as a template that Bob can import.
+
+[PLAN]
+1. Resolve active demo wallet (no explicit address in user message; demo mode, no Ledger).
+2. Call share_strategy with the staking-maxi EVM wallet to generate an anonymized JSON template.
+3. Hand the JSON to the user; explain that Bob would later paste it into his own VaultPilot via import_strategy.
+4. Stop at <= 8 calls; no signing, no broadcast.
+
+[TOOL_CALLS]
+1. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/  -> confirmed transcripts dir, next id slot.
+2. ToolSearch select:mcp__vaultpilot-mcp__share_strategy  -> loaded schema. Required: name; at least one of wallet/tron/solana/btc/ltc address. Privacy guard: regex-scans output for any 0x / T / base58 / 64-hex; redacts to 1-decimal percentages.
+3. ToolSearch select:mcp__vaultpilot-mcp__get_demo_wallet  -> loaded schema.
+4. mcp__vaultpilot-mcp__get_demo_wallet  -> demoActive=true, mode=live, persona=staking-maxi, evm=0x8EB8a3b98659Cce290402893d0123abb75E3ab28. Solana / TRON / BTC cells null for this persona (curation pending). EVM-only share is correct for a "staking strategy" template.
+5. mcp__vaultpilot-mcp__share_strategy { wallet: 0x8EB8...ab28, name: "staking maxi liquid + restaking", description: "...", riskProfile: moderate }  -> DENIED by user (permission prompt rejected). No JSON template generated. Halted further calls.
+
+[FINAL_REPLY_TO_USER]
+I tried to generate the shareable template via share_strategy on the active staking-maxi demo wallet
+(0x8EB8...ab28, EVM-only for this persona) with name "staking maxi liquid + restaking", riskProfile=moderate
+— but the call was denied at the permission prompt, so no JSON was produced. share_strategy is read-only
+and runs an output-side regex redaction (no addresses / no absolute USD / 1-decimal percentages) before
+emit, so it's safe to allow if you want me to retry; once approved I'll hand you the `jsonString` for Bob
+to paste into his VaultPilot via import_strategy. Want me to re-run it, or pick a different
+wallet/name/risk-profile first?
+
+[OUTCOME]
+Blocked — share_strategy denied at permission prompt; no template generated; no signing path touched
+(read-only tool, demo mode, no Ledger). Used 5 of 8 allowed calls; stopped on denial rather than
+re-prompting or working around it.
+
+[OBSERVATIONS]
+- share_strategy is the right tool: structure-only export (protocol + asset + % of total), explicit
+  redaction guard, JSON-only in v1 (URL hosting deferred to v2). Matches "template that Bob can import"
+  exactly — Bob's side is import_strategy, which I correctly did NOT call (it's his action, on his
+  VaultPilot, not mine).
+- staking-maxi persona has only the EVM cell populated at the current curation date; Solana / TRON /
+  BTC cells are null. For a *staking* strategy that's actually fine — the EVM wallet carries the
+  stETH-class + restaking exposure. If the user wanted a multi-chain template I'd need to either
+  switch personas or pass multiple address fields, but neither was requested.
+- Privacy-guard caveat worth surfacing if user retries: free-form `description` / `authorLabel` are
+  also scanned; if I'd put the raw 0x... into the description the call would have RedactionError'd.
+  My description was clean.
+- Permission denial is a legitimate stop signal — no retry loop, no attempt to substitute a
+  lower-privilege tool. Reported the exact args used so the user can approve-and-retry verbatim if
+  they want.
+- Did NOT invoke vaultpilot-preflight skill: share_strategy is not in the skill's trigger set
+  (prepare_* / preview_send / preview_solana_send / send_transaction / pair_ledger_*). Correct skip.
+- Stayed well under the 8-call cap (5 used, 3 unused) — denial was the natural terminator.

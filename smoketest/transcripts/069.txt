@@ -1,0 +1,47 @@
+SCRIPT_ID: 069
+CATEGORY: nft_read
+CHAIN: solana
+SCRIPT: What NFTs does Bob hold on Solana?
+====
+
+[USER]
+What NFTs does Bob hold on Solana?
+(Bob Solana: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU)
+
+[PLAN]
+Before fulfilling, investigate whether get_nft_portfolio supports Solana. Inspect the
+tool schema/description rather than calling it blindly against a Solana address (which
+would just bounce on the wallet regex). If unsupported, decline cleanly — do not
+attempt to fan out to other tools to fake coverage.
+
+[TOOL_CALLS]
+ToolSearch(query="get_nft_portfolio") -> schema returned
+  - description: "v1 read-only EVM-only — Solana NFT support needs a different API
+    surface (Helius DAS / Magic Eden) and is deferred."
+  - wallet param pattern: ^0x[a-fA-F0-9]{40}$ (EVM-only regex; Solana base58 address
+    would fail input validation)
+  - chains enum: ethereum | arbitrum | polygon | base | optimism (no solana)
+No other NFT-portfolio-style tool exists in the surfaced toolset for Solana
+(get_nft_collection / get_nft_history are item/collection-scoped, not wallet-scoped
+holdings enumeration, and there is no Helius-DAS-backed NFT tool exposed).
+
+[FINAL_REPLY_TO_USER]
+VaultPilot's NFT portfolio tool is EVM-only right now (Ethereum / Arbitrum / Polygon /
+Base / Optimism) — Solana NFT holdings aren't supported in this version, so I can't
+enumerate Bob's Solana NFTs from here.
+
+[OUTCOME]
+declined_unsupported_capability
+
+[OBSERVATIONS]
+- Correct behavior: stop fulfillment at the schema-inspection step. The tool's own
+  description explicitly defers Solana ("Helius DAS / Magic Eden ... deferred"), and
+  the wallet regex would reject the base58 address anyway — calling it would have been
+  pure noise.
+- Avoided the failure mode of substituting unrelated Solana tools (e.g. token balance,
+  staking positions) to manufacture an "NFT-ish" answer; those would not answer the
+  user's question and would just pad the call count.
+- Capped at 1 investigative tool call (ToolSearch) + 0 MCP calls = 1 total, well under
+  the 8-call ceiling. No prepare_* / send_* invoked (read-only intent honored).
+- User-facing reply names the supported chains so the user knows where the capability
+  does exist, without overpromising a Solana roadmap.

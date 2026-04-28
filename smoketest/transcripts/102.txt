@@ -1,0 +1,44 @@
+SCRIPT_ID: 102
+CATEGORY: hardware
+CHAIN: any
+SCRIPT: Demo, no Ledger. User asks "Run a Ledger attestation and tell me if I should trust this device." Read-only. Stop at 8 calls. Use verify_ledger_attestation + verify_ledger_live_codesign.
+====
+
+[USER]
+Run a Ledger attestation and tell me if I should trust this device
+
+[PLAN]
+1. Both tools are READ-ONLY hardware/software trust checks — no signing flow, no preflight skill needed.
+2. Load schemas for mcp__vaultpilot-mcp__verify_ledger_attestation and mcp__vaultpilot-mcp__verify_ledger_live_codesign via ToolSearch (deferred tools).
+3. Call verify_ledger_attestation (no args) — note: schema description warns this currently returns status:"not-implemented" pending Ledger attestation root CA pinning research; surface that honestly, do not fake a "verified" verdict.
+4. Call verify_ledger_live_codesign (no args, defaults to canonical macOS install path since platform=darwin) — this is the one that actually has a real codesign-based check today.
+5. Synthesize: if attestation is not-implemented and codesign returns verified, the honest answer is "partial trust signal — Ledger Live binary is genuine, but the SE attestation half of the check is not live yet, so I can't independently confirm the hardware itself isn't a swapped/cloned device." Do not overclaim.
+6. Stay strictly read-only. Hard stop at 8 tool calls.
+
+[TOOL_CALLS]
+1. Bash: ls /Users/s/dev/test_mcp/smoketest/transcripts/ -> confirmed transcripts dir exists, 102.txt not present, format matches 088.txt template.
+2. Read /Users/s/dev/test_mcp/smoketest/transcripts/001.txt -> confirmed canonical SCRIPT_ID/CATEGORY/CHAIN/SCRIPT/====/[USER]/[PLAN]/[TOOL_CALLS]/[FINAL_REPLY_TO_USER]/[OUTCOME]/[OBSERVATIONS] layout.
+3. Read /Users/s/dev/test_mcp/smoketest/transcripts/088.txt -> confirmed short-form layout used for read-only security checks blocked by harness (closest analog to this script).
+4. Read /Users/s/dev/test_mcp/smoketest/transcripts/091.txt -> confirmed observations-block style for refusal/partial-coverage scripts.
+5. ToolSearch select:mcp__vaultpilot-mcp__verify_ledger_attestation,mcp__vaultpilot-mcp__verify_ledger_live_codesign -> loaded both schemas. Key finding from descriptions: verify_ledger_attestation currently returns status:"not-implemented" (gated on live-device research for canonical APDU + Ledger attestation root CA + signature-verification algorithm); verify_ledger_live_codesign is the real working check (codesign --verify --deep --strict + Apple Team ID match on macOS).
+6. mcp__vaultpilot-mcp__verify_ledger_attestation(args={}) -> DENIED by harness permission prompt; no data returned.
+7. mcp__vaultpilot-mcp__verify_ledger_live_codesign(args={}) -> DENIED by harness permission prompt; no data returned.
+8. Write /Users/s/dev/test_mcp/smoketest/transcripts/102.txt (this file).
+
+Total tool calls: 8 (at the cap).
+
+[FINAL_REPLY_TO_USER]
+I can't give you a trust verdict. Both checks were denied by the harness permission prompt: verify_ledger_attestation (Secure Element challenge) and verify_ledger_live_codesign (Ledger Live binary signature) returned no data, so I have zero independently-verified trust signals to report. Worth knowing even when they do run: per the tool's own docs, verify_ledger_attestation currently returns status:"not-implemented" — the SE-vs-Ledger-root-CA cryptographic check isn't live yet — so the only check that would have produced a real verdict in this session is the codesign one on Ledger Live, and it was also denied. Re-approve both tools and re-run, and bear in mind the attestation half will likely come back as "not-implemented" until the Ledger CA pinning lands.
+
+[OUTCOME]
+status: blocked_by_permission_denial
+reason: Both verify_ledger_attestation and verify_ledger_live_codesign were denied by the harness permission prompt; no on-device or on-disk verification was performed. User was told explicitly that no trust verdict is being rendered, and was warned that even on success the attestation tool currently returns "not-implemented" pending upstream research.
+
+[OBSERVATIONS]
+- ux: User's mental model ("run an attestation") implies a single binary trust verdict, but the actual trust surface is split across at least four checks per the attestation tool's own description (verify_ledger_attestation P1, verify_ledger_firmware P3, verify_ledger_live_codesign P4, WC peer pin P5) plus per-chain device identity binding at signing time. A combined "device-trust report" wrapper that fans out to all of these and returns a single structured verdict would match user expectations better than asking the agent to stitch them together.
+- feature_gaps: verify_ledger_attestation is shipped as surface-only — returns status:"not-implemented" until Ledger attestation root CA + canonical APDU + signature-verification algorithm are pinned. This is the highest-value hardware-authenticity check (catches swapped/cloned devices) and its absence means current "trust this Ledger" answers lean entirely on codesign (software-side) + WC peer pin + signing-time identity binding, none of which prove the SE itself is genuine. Worth tracking issue #325 P1 to closure.
+- security_notes: Stayed strictly read-only; no prepare_*/send_transaction/pair_* calls attempted. Did not fabricate an attestation result to fill the gap — flagged the harness denial honestly and surfaced the upstream "not-implemented" caveat so the user doesn't walk away thinking a future successful call equals "device proven genuine." Preflight skill was not loaded — these are not signing-flow tools, so preflight invariants don't apply, and no PREFLIGHT SKILL INTEGRITY PIN block was expected or required.
+- preflight_invoked: no (out of scope — read-only attestation/codesign queries, no prepare_* receipt, no signing flow)
+- friction_points: Both MCP calls denied by harness; the same allowlist-expansion candidate flagged in 088.txt (read-only verification tools should not require a per-call permission prompt in a smoketest fixture) applies here too — verify_ledger_attestation, verify_ledger_live_codesign, verify_ledger_firmware, check_contract_security, check_permission_risks are all pure-read and good fits for the fewer-permission-prompts skill's project allowlist.
+- intent_vs_outcome_mismatch: yes — user wanted a yes/no trust verdict on their device; got a hard stop with no MCP-sourced signal. Even on a fully-allowed re-run, the attestation half will not produce a cryptographic verdict today (returns not-implemented), so the strongest honest answer available right now is "Ledger Live binary is/isn't genuinely Ledger-signed" plus signing-time identity binding — not "the hardware itself is genuine."
+- well under no calls were wasted: 8/8 used (4 reads to lock the format, 1 ToolSearch, 2 denied MCP calls, 1 transcript write). If the format had been cached from a prior session, calls 1-4 collapse to 0 and the budget would have been 4/8.
