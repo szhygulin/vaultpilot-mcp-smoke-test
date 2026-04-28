@@ -10,6 +10,24 @@ Helper scripts used during smoke-test runs. These are the little utilities the p
 | `find_missing_transcripts.sh` | Diff between expected script IDs (from a `scripts.json`) and on-disk `transcripts/*.txt` — surfaces which subagents haven't completed yet | Phase 3 monitoring |
 | `wait_for_transcripts.sh` | Block until a target transcript count is reached. Designed for `Bash(run_in_background:true)` so the parent agent gets a single "all done" notification | Phase 3 / 4 transition |
 | `sample_matrix_run.py` | Partition the (expert + newcomer) matrix into fixed-size random batches; track per-batch progress so every cell runs exactly once. User decides how many batches to dispatch per session/week. | Phase 2.5 (cost preflight) for matrix-mode runs |
+| `file_batch_issues.py` | Parse a batch's `issues.draft.json` (produced by the Phase 5 analysis subagent), file each as a GitHub issue via `gh issue create`, and append URLs to `issues.md`. Avoids the orchestrator re-constructing 10 issue heredocs inline per batch. | Phase 3.7 (issue filing) for matrix-mode runs |
+
+### `file_batch_issues.py` — usage
+
+```bash
+# Preview (no filing)
+python3 tools/file_batch_issues.py --batch N --repo OWNER/REPO --dry-run
+
+# File all
+python3 tools/file_batch_issues.py --batch N --repo OWNER/REPO
+
+# File a subset (1-based indices into the issues array)
+python3 tools/file_batch_issues.py --batch N --repo OWNER/REPO --only 1,3,7
+```
+
+Input: `runs/matrix-sampled/batch-NN/issues.draft.json` (schema documented in the file's docstring; the Phase 5 analysis subagent emits it per `skill/SKILL.md` Phase 5 step 5.5). Output: appends a markdown table of filed-issue URLs to `runs/matrix-sampled/batch-NN/issues.md`.
+
+Pre-req: `gh auth status` clean. Labels referenced in `issues.draft.json` must exist on the repo (or be pre-created via `gh label create`); the script does not auto-create labels.
 
 ### `sample_matrix_run.py` — usage
 
