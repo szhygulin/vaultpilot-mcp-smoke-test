@@ -148,7 +148,6 @@ def cmd_init(args: argparse.Namespace) -> None:
     pct_all = week_total / args.all_models_weekly * 100
     per_batch_tokens = args.batch_size * args.per_cell
     pct_batch_session = per_batch_tokens / args.session_all_models * 100
-    pct_run_session = week_total / args.session_all_models * 100
 
     print(f"wrote {PARTITION_PATH}")
     print(f"  total cells:              {partition['total_cells']}")
@@ -161,7 +160,8 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"  All-models weekly anchor: ~{args.all_models_weekly / 1e6:.0f}M  "
           f"→ each week ≈ {pct_all:.0f}% of bucket")
     print(f"  Session 5-hr anchor:      ~{args.session_all_models / 1e6:.0f}M  "
-          f"→ per batch ≈ {pct_batch_session:.0f}%, full weekly run ≈ {pct_run_session:.0f}%")
+          f"→ per batch ≈ {pct_batch_session:.0f}% of one window "
+          f"({args.batch_size} cells × {args.per_cell // 1000}k = ~{per_batch_tokens / 1e6:.2f}M)")
     print(f"  batch size:               {partition['batch_size']}")
     print(f"  seed:                     {partition['seed']}")
 
@@ -253,7 +253,6 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     pct_sonnet_weekly = total_tokens / sonnet_weekly * 100
     pct_all_weekly = total_tokens / all_models_weekly * 100
     pct_batch_session = per_batch_tokens / session_all_models * 100
-    pct_run_session = total_tokens / session_all_models * 100
 
     print(f"wrote {scripts_path}")
     print()
@@ -275,15 +274,10 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     print(f"  All-models bucket:  ~{pct_all_weekly:.0f}% of weekly "
           f"(anchor ~{all_models_weekly / 1e6:.0f}M)")
     print()
-    print(f"Per-session check (5-hour rolling window, all-models):")
-    print(f"  One batch:        ~{pct_batch_session:.0f}% of session "
-          f"(~{per_batch_tokens / 1e6:.2f}M / anchor ~{session_all_models / 1e6:.0f}M)")
-    print(f"  Full weekly run:  ~{pct_run_session:.0f}% of session "
-          f"(~{total_tokens / 1e6:.1f}M / anchor ~{session_all_models / 1e6:.0f}M)")
-    if pct_run_session > 100:
-        print(f"  ⚠ weekly run > one session — dispatch will straddle ≥2 "
-              f"5-hour windows; that's fine, just expect rate-limit pauses "
-              f"between them.")
+    print(f"Per-batch (5-hour session check, all-models):")
+    print(f"  Batch size:    {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
+    print(f"  Session usage: ~{pct_batch_session:.0f}% of one 5-hour window "
+          f"(anchor ~{session_all_models / 1e6:.0f}M)")
     print()
     print(f"These are rough estimates — verify on your account dashboard "
           f"for exact numbers. Override anchors via `init --sonnet-weekly`, "
