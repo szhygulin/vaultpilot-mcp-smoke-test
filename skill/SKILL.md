@@ -155,6 +155,21 @@ Recompute and re-prompt if the user changes any of:
 
 If the user accepts: proceed to Phase 3. If the user wants to scale down (e.g. "use the sparse vector instead", "skip half the categories"), recompute the estimate against the new plan and re-prompt before dispatching.
 
+### When the matrix exceeds weekly budget
+
+If the planned run is over ~90% of the user's weekly Sonnet bucket, propose **partitioning into weekly samples** rather than scaling down or proceeding-with-overage. Use `tools/sample_matrix_run.py`:
+
+```bash
+python3 tools/sample_matrix_run.py init           # one-time, deterministic seed
+python3 tools/sample_matrix_run.py next-week      # writes runs/matrix-sampled/week-NN/scripts.json
+# … dispatch this week's scripts.json via Phase 3 …
+python3 tools/sample_matrix_run.py mark-completed --week NN
+```
+
+The tool flattens both matrices, shuffles once with a fixed seed, and partitions into non-overlapping weekly chunks sized to ~90% of the weekly Sonnet bucket. Each cell runs exactly once across N weeks. Default partition (3 weeks × 540 cells) covers all 1110 cells in three weekly resets.
+
+Each week's `scripts.json` is in the same shape Phase 3 dispatches consume, with `role` and `attack` already inlined per cell — the dispatch subagent prompt template just reads them through.
+
 ---
 
 ## Phase 3 — Run subagents
@@ -170,7 +185,7 @@ Workdir layout:
 
 Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "sonnet"`. The orchestrator running this skill stays on its default model (Opus); only the spawned subagents run on Sonnet — they're doing high-volume role-play of threat-model scenarios where the extra reasoning headroom over Haiku materially changes whether subtle attacks (homoglyph, approval-cloak, chain-swap) land convincingly enough to test the defense. The cost premium is accepted for this skill specifically; on Max x20 plans Sonnet usage is billed separately while Haiku is included, so this is a deliberate quality-over-cost choice for adversarial smoke testing.
 
-**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. Historically 10/batch has been a reasonable default, but don't treat it as fixed — go larger when the MCP is fast and rate limits are healthy, smaller when batches are throwing rate-limit errors or when you want to inspect early results before fanning out further.
+**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. **Default for Sonnet-mode runs: 15/batch** (slightly higher than the historical Haiku-tuned 10/batch, because Sonnet's per-call latency is somewhat higher and 15 keeps wall-clock manageable while staying under typical 5-hour-window TPM caps). Tune down to 10 or below on rate-limit errors; go higher only after early batches have completed cleanly. Sampled weekly runs from `tools/sample_matrix_run.py` carry the recommended batch size in their `scripts.json` `batch_size` field — read it from there.
 
 ### Honest mode prompt template
 

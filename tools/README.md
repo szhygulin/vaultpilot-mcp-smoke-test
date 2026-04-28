@@ -9,6 +9,35 @@ Helper scripts used during smoke-test runs. These are the little utilities the p
 | `parse_summary_adversarial.py` | Same as above, plus the `[ADVERSARIAL_RESULT]` block (role / attack / defense_layer / did_user_get_tricked) | Phase 5 step 5.2 (adversarial mode) |
 | `find_missing_transcripts.sh` | Diff between expected script IDs (from a `scripts.json`) and on-disk `transcripts/*.txt` — surfaces which subagents haven't completed yet | Phase 3 monitoring |
 | `wait_for_transcripts.sh` | Block until a target transcript count is reached. Designed for `Bash(run_in_background:true)` so the parent agent gets a single "all done" notification | Phase 3 / 4 transition |
+| `sample_matrix_run.py` | Partition the (expert + newcomer) matrix into weekly random samples that fit the Sonnet-weekly budget; track per-week progress so every cell runs exactly once across N weeks | Phase 2.5 (cost preflight) for matrix-mode runs |
+
+### `sample_matrix_run.py` — usage
+
+A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, which exceeds the Max-x20 weekly Sonnet bucket. This tool partitions the work into non-overlapping weekly samples sized to fit ~90% of the weekly budget, with a fixed seed so the partition is deterministic.
+
+```bash
+# One-time: build the partition + progress files (already done if committed)
+python3 tools/sample_matrix_run.py init [--seed N] \
+    [--sonnet-weekly 30000000] [--fraction 0.9] \
+    [--per-cell 50000] [--batch-size 15]
+
+# Each week: get the next pending sample, writes runs/matrix-sampled/week-NN/scripts.json
+python3 tools/sample_matrix_run.py next-week
+
+# After dispatching + analyzing the week's run
+python3 tools/sample_matrix_run.py mark-completed --week N \
+    [--transcripts runs/matrix-sampled/week-NN/transcripts]
+
+# Anytime: see overall progress
+python3 tools/sample_matrix_run.py status
+```
+
+State files (under `runs/matrix-sampled/`):
+- `partition.json` — immutable plan; `init --force` to reshuffle from a new seed
+- `progress.json` — `pending | in_progress | completed` per week
+- `week-NN/scripts.json` — the cells dispatched that week, in the format the skill's Phase 3 dispatch consumes (one entry per cell, with role + attack inlined)
+
+Default budget (30M Sonnet weekly × 0.9 × 50k tokens/cell = 540 cells/week → 3 weeks for the full 1110-cell matrix). Override the budget args if your plan, model behavior, or the skill's per-cell anchor changes.
 
 ## Conventions
 
