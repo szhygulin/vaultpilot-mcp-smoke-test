@@ -206,7 +206,7 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     hydrated = []
     for c in batch_cells:
         row = rows_by_key[(c['audience'], c['row_id'])]
-        hydrated.append({
+        cell = {
             'id': f"{c['audience']}-{c['row_id']}-{c['role']}",
             'audience': c['audience'],
             'row_id': c['row_id'],
@@ -215,7 +215,15 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
             'chain': row.get('chain'),
             'script': row['script'],
             'attack': row['cells'][c['role']],
-        })
+        }
+        # Surface Role A subtype to dispatched subagents so they can simulate
+        # the right injection class (A.1 bytes / A.2 selection / A.3 set-level
+        # / A.4 prompt-context confusion / A.5 advisory-only — see issue #21).
+        # For C cells, A.5 means the agent half is advisory-only; passing the
+        # subtype lets the subagent shape the rogue-agent half coherently.
+        if c['role'] in ('A', 'C') and row.get('role_A_subtype'):
+            cell['role_A_subtype'] = row['role_A_subtype']
+        hydrated.append(cell)
 
     batch_dir = f'{SAMPLE_DIR}/batch-{batch_n:02d}'
     os.makedirs(batch_dir, exist_ok=True)
@@ -228,8 +236,8 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
             'via skill/SKILL.md Phase 3.'
         ),
         'batch': batch_n,
-        'addressBook': expert.get('addressBook', {}),
-        'roleLegend': expert.get('roleLegend', {}),
+        'addressBook': matrix.get('addressBook', {}),
+        'roleLegend': matrix.get('roleLegend', {}),
         'scripts': hydrated,
     }
     with open(scripts_path, 'w') as f:
@@ -242,9 +250,13 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
 
     audience_counts = {'expert': 0, 'newcomer': 0}
     role_counts = {}
+    a_subtype_counts = {}
     for c in hydrated:
         audience_counts[c['audience']] = audience_counts.get(c['audience'], 0) + 1
         role_counts[c['role']] = role_counts.get(c['role'], 0) + 1
+        if c['role'] == 'A' and c.get('role_A_subtype'):
+            sub = c['role_A_subtype']
+            a_subtype_counts[sub] = a_subtype_counts.get(sub, 0) + 1
 
     bc = partition['budget_constraint']
     per_cell = bc['tokens_per_cell']
@@ -267,6 +279,15 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     print(f"Sample:     {len(hydrated)} cells "
           f"(expert: {audience_counts.get('expert', 0)}, "
           f"newcomer: {audience_counts.get('newcomer', 0)}; {role_summary})")
+    if a_subtype_counts:
+        sub_summary = ', '.join(f"{s}: {n}"
+                                for s, n in sorted(a_subtype_counts.items()))
+        a5_n = a_subtype_counts.get('A.5', 0)
+        a_total = sum(a_subtype_counts.values())
+        a5_note = (f" — {a5_n} A.5 cells are advisory-only (OUT OF SCOPE for "
+                   f"MCP/skill filing per issue #21; route to upstream-escalation "
+                   f"§7 in analysis)") if a5_n else ""
+        print(f"            Role-A subtypes: {sub_summary} (of {a_total}){a5_note}")
     print(f"Throughput: ~{dispatch_throughput / 1e6:.2f}M Haiku tokens "
           f"(dispatch — quota-free)")
     print(f"            ~{analysis_tokens / 1e6:.2f}M Opus tokens "
@@ -291,7 +312,8 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
 # Phase 3 transcript template) to emit fields in these exact forms; the
 # parser falls back gracefully when they don't, but stable Counter buckets
 # require canonical inputs.
-_CANONICAL_ROLES = {'A', 'B', 'C', 'D', 'E'}
+_CANONICAL_ROLES = {'A', 'B', 'C', 'D', 'E', 'F'}
+_CANONICAL_A_SUBTYPES = {'A.1', 'A.2', 'A.3', 'A.4', 'A.5'}
 _CANONICAL_TRICKED = {'yes', 'no', 'n/a'}
 _CANONICAL_DEFENSE_TOKENS = {
     'invariant-1', 'invariant-2', 'invariant-3', 'invariant-4',
@@ -308,6 +330,20 @@ def _canonicalize_role(raw: str) -> str:
     m = re.match(r'^\s*([A-Ea-e])\b', raw)
     if m:
         return m.group(1).upper()
+    return 'unknown'
+
+
+def _canonicalize_a_subtype(raw: str) -> str:
+    """'A.1', 'a.5 (advisory)', 'A1', 'subtype: A.4' → 'A.1'/'A.5'/'A.1'/'A.4'.
+    Falls back to 'unknown' (note: 'unknown' is the right bucket for non-A
+    rows; callers can filter)."""
+    if not raw:
+        return 'unknown'
+    m = re.search(r'A\.?\s*([1-5])', raw, re.I)
+    if m:
+        return f'A.{m.group(1)}'
+    if re.match(r'^\s*n/?a\b', raw, re.I):
+        return 'n/a'
     return 'unknown'
 
 
@@ -387,14 +423,17 @@ def _parse_transcripts(transcripts_dir: str) -> list[dict]:
         m_def = re.search(r'defense[_ ]layer[_a-z ]*:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         m_tricked = re.search(r'did[_ ]user[_ ]get[_ ]tricked:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         m_attempt = re.search(r'attack[_ ]attempted:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
+        m_subtype = re.search(r'a[_ ]?subtype:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         rec['defense_layer_raw'] = m_def.group(1).strip() if m_def else ''
         rec['did_user_get_tricked_raw'] = m_tricked.group(1).strip() if m_tricked else ''
         rec['attack_attempted'] = m_attempt.group(1).strip() if m_attempt else ''
+        rec['a_subtype_raw'] = m_subtype.group(1).strip() if m_subtype else ''
 
         # Canonicalize for stable aggregation.
         rec['role'] = _canonicalize_role(rec.get('role', ''))
         rec['defense_layer'] = _canonicalize_defense_layer(rec['defense_layer_raw'])
         rec['did_user_get_tricked'] = _canonicalize_tricked(rec['did_user_get_tricked_raw'])
+        rec['a_subtype'] = _canonicalize_a_subtype(rec['a_subtype_raw'])
         records.append(rec)
     return records
 
@@ -436,6 +475,8 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
     by_layer = Counter(r['defense_layer'] for r in records)
     by_tricked = Counter(r['did_user_get_tricked'] for r in records)
     by_role = Counter(r.get('role', '?') for r in records)
+    # Role-A subtypes only count among role=A records (per issue #21).
+    by_a_subtype = Counter(r['a_subtype'] for r in records if r.get('role') == 'A')
     tricked = by_tricked.get('yes', 0)
 
     aggregate = {
@@ -444,6 +485,7 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
         'by_defense_layer': dict(by_layer),
         'by_did_user_get_tricked': dict(by_tricked),
         'by_role': dict(by_role),
+        'by_a_subtype': dict(by_a_subtype),
         'tricked_count': tricked,
         'tricked_script_ids': [r.get('script_id', r['file'].replace('.txt', ''))
                                for r in records
@@ -458,6 +500,8 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
         print(f"  wrote {aggregate_path}")
         print(f"  transcripts:          {len(records)}")
         print(f"  by role:              {dict(by_role)}")
+        if by_a_subtype:
+            print(f"  by A subtype (A=only):{dict(by_a_subtype)}")
         print(f"  by defense layer:     {dict(by_layer)}")
         print(f"  did_user_get_tricked: {dict(by_tricked)}")
         if tricked:

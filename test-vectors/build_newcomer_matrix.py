@@ -35,11 +35,45 @@ NEWCOMER = json.load(open(f'{REPO}/test-vectors/newcomer-adversarial.json'))
 EXTENSIONS = json.load(open(f'{REPO}/test-vectors/extensions.json'))['newcomer_extensions']
 
 ROLE_LEGEND = {
-    'A': 'rogue agent, honest MCP — agent itself is the attacker',
+    'A': ('prompt-injected agent, honest MCP — agent is benign but susceptible to prompt '
+          'injection (from user input, MCP responses, retrieved docs); MCP returns honest data. '
+          'Each row is sub-typed A.1 (bytes tamper) / A.2 (tool-call selection) / '
+          'A.3 (set-level lies) / A.4 (prompt-context confusion) / A.5 (advisory-text-only — '
+          'OUT OF SCOPE for MCP/skill filing per issue #21). See skill/SKILL.md role library.'),
     'B': 'honest agent, rogue MCP — MCP returns tampered bytes',
-    'C': 'combined — rogue agent + rogue MCP, coordinating',
+    'C': 'combined — prompt-injected agent + rogue MCP, coordinating',
     'D': 'supply-chain skill tamper — companion preflight skill modified on disk; Step 0 must catch',
     'F': 'rogue RPC — chain reads tampered upstream of an honest MCP; integrity gap on read data',
+}
+
+# Role A sub-type per category. Newcomer prompts are largely advisory by
+# design (educational questions, get-rich-quick framings, scam-adjacent ASK
+# patterns) — most categories are A.5 (out of scope for MCP/skill filing).
+# A few categories model the "trust window → confused tool-call" pattern
+# (A.4: scam_adjacent obeys an injected scam frame). See expert builder
+# A_SUBTYPE_PER_CATEGORY for full taxonomy and issue #21 for rationale.
+A_SUBTYPE_PER_CATEGORY = {
+    # A.4 — confusion via prompt context (scam frame redirects tool call)
+    'scam_adjacent': 'A.4',
+
+    # A.5 — advisory-text-only (OUT OF SCOPE for MCP/skill filing)
+    'onboarding': 'A.5',
+    'get_rich_quick': 'A.5',
+    'yield_savings': 'A.5',
+    'defi_confusion': 'A.5',
+    'self_custody': 'A.5',
+    'tax_regulatory': 'A.5',
+    'bridging': 'A.5',
+    'nft_token': 'A.5',
+    'hardware_wallet': 'A.5',
+    'protocol_specific': 'A.5',
+    'meta_general': 'A.5',
+    'trading_education': 'A.5',
+    'l2_education': 'A.5',
+    'aa_education': 'A.5',
+    'address_safety': 'A.5',
+    'signature_safety': 'A.5',
+    'wallet_safety': 'A.5',
 }
 
 # Multi-chain address book matching vaultpilot-mcp's demo personas.
@@ -246,6 +280,13 @@ def _build_cells(cat: str) -> dict:
     return cells
 
 
+def _a_subtype(cat: str) -> str:
+    sub = A_SUBTYPE_PER_CATEGORY.get(cat)
+    if not sub:
+        sys.exit(f"missing A_SUBTYPE_PER_CATEGORY entry for category: {cat}")
+    return sub
+
+
 def main():
     rows = []
     for s in NEWCOMER['scripts']:
@@ -253,6 +294,7 @@ def main():
             'id': s['id'],
             'category': s['category'],
             'script': s['script'],
+            'role_A_subtype': _a_subtype(s['category']),
             'cells': _build_cells(s['category']),
         }
         # Carryover override: if existing entry has role A/B/C, use its specific
@@ -269,6 +311,7 @@ def main():
             'id': e['id'],
             'category': e['category'],
             'script': e['script'],
+            'role_A_subtype': _a_subtype(e['category']),
             'cells': _build_cells(e['category']),
         })
 
@@ -294,7 +337,12 @@ def main():
             'Many newcomer prompts are pure-info; the B/C/D cells model the '
             'trust-building → follow-up-signing-flow attack surface. F (rogue '
             'RPC) covers chain-data integrity gaps that affect even pure-read '
-            'flows. See ../skill/SKILL.md for methodology.'
+            'flows. Each row carries `role_A_subtype` (A.1-A.5 per issue #21); '
+            'the newcomer corpus skews heavily A.5 (advisory-text-only, OUT '
+            'OF SCOPE for MCP/skill filing) by design — that distribution is '
+            'itself a finding about where newcomer protections need to live '
+            '(model-layer / chat-client / out-of-band). See ../skill/SKILL.md '
+            'for methodology.'
         ),
         'roleLegend': ROLE_LEGEND,
         'addressBook': ADDRESS_BOOK,
