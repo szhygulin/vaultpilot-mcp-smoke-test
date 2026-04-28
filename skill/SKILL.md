@@ -48,13 +48,16 @@ If the MCP has a real-funds / signing surface, **always run in demo / sandbox mo
 
 ### Auto-enable demo mode when the MCP supports it
 
-If the target MCP exposes an in-session demo toggle (e.g. `vaultpilot-mcp`'s `set_demo_wallet` / `VAULTPILOT_DEMO=true` env var), the orchestrator must:
+If the target MCP exposes a demo toggle (e.g. `vaultpilot-mcp`'s `set_demo_wallet` + `VAULTPILOT_DEMO=true` env var), the orchestrator must:
 
 1. **Probe the current state** before Phase 3 dispatch — call the MCP's status tool (`get_demo_wallet`, `get_vaultpilot_config_status`, or equivalent) and check whether demo / sandbox mode is active.
-2. **If demo is OFF, auto-enable it** rather than asking the user every time. Pick a persona that maximizes coverage for the planned scripts (for `vaultpilot-mcp`, `defi-degen` covers EVM + Solana + TRON DeFi flows). Surface what was enabled and why, then proceed.
-3. **If the MCP has no demo toggle** but has a real-funds surface, refuse to dispatch and propose narrowing to read-only scripts only (or have the user enable demo through whatever means the MCP supports — e.g. restart with env var).
+2. **If demo is OFF and the toggle is in-session,** activate it directly (e.g. `set_demo_wallet { persona: "defi-degen" }` for vaultpilot's broadest coverage across EVM + Solana + TRON). Surface what was enabled, then proceed.
+3. **If demo is OFF and the toggle is env-gated (server restart required),** edit the user's MCP client config (`~/.claude.json`'s `mcpServers.<name>.env`) to add the required env var directly — don't make the user hunt for the file. Use `python3 -c "..."` with `json.dumps(..., ensure_ascii=False)` to preserve UTF-8 chars in unrelated config (Python's default ASCII-escape will mangle the rest of the file). Verify with a `diff` against a backup before declaring done. Then prompt the user to restart whichever surface owns the MCP process — usually a fresh Claude Code session, since MCP servers are spawned as subprocesses on session start. Don't try `set_demo_wallet`-style in-session toggles when the env gate is unset; they no-op silently.
+4. **If the MCP has no demo toggle at all** but has a real-funds surface, refuse to dispatch and propose narrowing to read-only scripts only.
 
-Auto-enabling is the right default because the user has already opted into smoke testing this MCP — having to confirm demo mode each batch is busywork. The orchestrator should still **report** what it did ("activated demo persona X for this session") so the action is visible. If the user prefers a different persona or wants to opt out, they can override before the next `next-batch`.
+After restart (case 3), re-probe demo state via the status tool to confirm the env var took effect, then proceed with the in-session activation (case 2 path).
+
+Auto-enabling is the right default because the user has already opted into smoke testing this MCP — having to confirm demo mode each batch is busywork. The orchestrator should still **report** what it did ("activated demo persona X" / "edited config and prompted for restart") so the action is visible. If the user prefers a different persona or wants to opt out, they can override before the next `next-batch`.
 
 ---
 
