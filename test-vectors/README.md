@@ -9,12 +9,14 @@ Reusable test-vector files for the vaultpilot-mcp smoke-test methodology (see `.
 | `honest-baseline.json` | Pass 1 — honest baseline catalog (expert prompts) | 120 scripts |
 | `adversarial.json` | Pass 2 — sparse adversarial catalog (initial 44 + 67 expansion), expert prompts with role + attack metadata | 111 entries |
 | `newcomer-adversarial.json` | Pass 3 — sparse newcomer search-term prompts with single adversarial role overlay per prompt | 220 scripts |
-| `expert-matrix.json` | **Full 2D matrix** — expert prompts × {A, B, C}. 150 prompts (120 honest + 30 unique-initial) × 3 roles = **450 cells**, every cell populated. | 450 cells |
-| `newcomer-matrix.json` | **Full 2D matrix** — newcomer prompts × {A, B, C}. 220 prompts × 3 roles = **660 cells**, every cell populated. | 660 cells |
+| `expert-matrix.json` | **Per-audience 2D matrix** — expert prompts × {A, B, C}. 150 prompts (120 honest + 30 unique-initial) × 3 roles = **450 cells**. Source of truth for expert authoring. | 450 cells |
+| `newcomer-matrix.json` | **Per-audience 2D matrix** — newcomer prompts × {A, B, C}. 220 prompts × 3 roles = **660 cells**. Source of truth for newcomer authoring. | 660 cells |
+| `matrix.json` | **Unified matrix** — concatenation of `expert-matrix.json` + `newcomer-matrix.json` with explicit `audience` field per row. 370 prompts × 3 roles = **1110 cells**. This is the file `tools/sample_matrix_run.py` consumes; the per-audience files remain the authored source. | 1110 cells |
 | `build_adversarial.py` | Reproducer for `adversarial.json` | — |
 | `build_newcomer.py` | Reproducer for `newcomer-adversarial.json` | — |
 | `build_expert_matrix.py` | Reproducer for `expert-matrix.json` | — |
 | `build_newcomer_matrix.py` | Reproducer for `newcomer-matrix.json` | — |
+| `build_matrix.py` | Reproducer for unified `matrix.json` (concatenates expert + newcomer with `audience` tag) | — |
 
 ## Schema
 
@@ -142,6 +144,7 @@ python3 test-vectors/build_adversarial.py       # rebuilds adversarial.json
 python3 test-vectors/build_newcomer.py          # rebuilds newcomer-adversarial.json
 python3 test-vectors/build_expert_matrix.py     # rebuilds expert-matrix.json
 python3 test-vectors/build_newcomer_matrix.py   # rebuilds newcomer-matrix.json
+python3 test-vectors/build_matrix.py            # rebuilds unified matrix.json (after either of the above changes)
 ```
 
 Inputs for `build_adversarial.py`:
