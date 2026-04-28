@@ -139,9 +139,10 @@ Worked example — adversarial run on `expert-matrix.json` (450 cells):
 
 ### Ballpark against Max x20 weekly tiers
 
-Max x20 has two relevant weekly buckets that this run consumes:
-- **Sonnet-only weekly bucket**: ballpark **~25–35M tokens/week** (this is where the dispatched subagents land — they're pinned to Sonnet).
-- **All-models weekly bucket** (cross-model, includes Opus orchestrator + Sonnet subagents + any Haiku/other usage): ballpark **~40–60M tokens/week**.
+Max x20 has three relevant weekly buckets that this run consumes:
+- **Sonnet-only weekly bucket**: ballpark **~25–35M tokens/week** (where dispatched per-cell subagents land — pinned to Sonnet per Phase 3).
+- **Opus weekly bucket**: ballpark **~8–12M tokens/week** (where the Phase 5 analysis subagent lands — pinned to Opus per Phase 5 step 5.3, plus orchestrator overhead since the orchestrator runs on Opus by default). Smallest bucket; binding constraint for analysis-heavy runs.
+- **All-models weekly bucket** (cross-model, includes Opus orchestrator + Sonnet subagents + Opus analyses + any Haiku/other usage): ballpark **~40–60M tokens/week**.
 
 These anchors are approximate — Anthropic's plan structure evolves; verify against the user's account dashboard for exact current numbers if it matters. The skill's job is **order-of-magnitude awareness**, not authoritative billing.
 
@@ -191,7 +192,7 @@ After dispatch finishes for a batch, run `mark-completed --batch N`. That auto-r
 
 1. **Dispatch** (Phase 3) — handled above.
 2. **Auto-aggregate** — `mark-completed` runs this for you. Parses `batch-NN/transcripts/*.txt` → writes `batch-NN/summary.txt` and `batch-NN/aggregate.json`. Surfaces structural counts: by role, by defense layer (which invariant caught the attack, or `none`), and `did_user_get_tricked` (yes/no/n/a). The "tricked: yes" SCRIPT_IDs are flagged in the console output — those are the urgent ones.
-3. **Per-batch findings.md + issues.draft.json** — orchestrator delegates a fresh analysis subagent (`model: "sonnet"`) over `batch-NN/summary.txt`. Use the canonical Phase 5 analysis prompt, scoped to "this batch's N cells". The subagent emits TWO artifacts:
+3. **Per-batch findings.md + issues.draft.json** — orchestrator delegates a fresh analysis subagent (`model: "opus"`) over `batch-NN/summary.txt`. Use the canonical Phase 5 analysis prompt, scoped to "this batch's N cells". The subagent emits TWO artifacts:
    - `batch-NN/findings.md` — analyst-readable prose (sections 1–6 from the Phase 5 prompt).
    - `batch-NN/issues.draft.json` — machine-readable issue list, one entry per `# Filing recommendations` finding from §6 of `findings.md`. Schema:
      ```json
@@ -335,7 +336,7 @@ Optionally produce a structured per-script summary with a small Python script ex
 
 ## Phase 5 — Analyze
 
-Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "sonnet"`. As in Phase 3, the orchestrator stays on Opus; only the spawned analysis subagent runs on Sonnet — analysis quality matters here (the corpus is large, the patterns are subtle), and the same Max-x20 billing rationale from Phase 3 applies.
+Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "opus"`. The dispatched per-cell subagents run on Sonnet (Phase 3); the analysis subagent is upgraded to Opus because it does cross-corpus pattern recognition over 50+ transcripts at once and the upgrade materially changes whether subtle multi-cell patterns (Role-C structural risks, layered invariant gaps, education-frame-then-exploit chains) are surfaced. The cost is one Opus run per batch (~250k input + ~10k output ≈ ~260k Opus tokens); see Phase 2.5 for how this lands against the Max-x20 Opus weekly bucket.
 
 ### How exactly to analyze the chat histories (concrete recipe — don't skip)
 

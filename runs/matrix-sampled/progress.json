@@ -1,13 +1,13 @@
 {
-  "created_at": "2026-04-28T16:08:00Z",
+  "created_at": "2026-04-28T17:15:20Z",
   "total_batches": 23,
   "batches": [
     {
       "batch": 1,
       "cell_count": 50,
       "status": "completed",
-      "started_at": "2026-04-28T16:20:20Z",
-      "completed_at": "2026-04-28T16:35:25Z",
+      "started_at": null,
+      "completed_at": "2026-04-28T17:15:30Z",
       "transcripts_dir": null
     },
     {
