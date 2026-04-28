@@ -10,7 +10,7 @@ Why this exists:
   on Haiku per skill/SKILL.md Phase 3, which is quota-free on Max x20 — but
   rate-limit windows still cap throughput, and the Phase 5 analysis subagent
   (Opus) does deplete the Opus weekly + all-models weekly buckets. Splitting
-  into batches sized to fill ~50% of one 5-hour all-models session lets you
+  into batches sized to fill ~25% of one 5-hour all-models session lets you
   dispatch 1-2 batches per session, paced however suits you.
 
 Sampling strategy:
@@ -18,7 +18,7 @@ Sampling strategy:
   - Shuffle once with a fixed seed (default 42) — deterministic, reproducible.
   - Slice into batches of N cells, where
         N = floor(SESSION_ALL_MODELS × BATCH_SESSION_FRACTION / TOKENS_PER_CELL)
-    Defaults: 5M × 0.5 / 50k = 50 cells/batch → 23 batches total for 1110 cells.
+    Defaults: 5M × 0.25 / 50k = 25 cells/batch → 361 batches total for 9020 cells.
   - Each batch is non-overlapping; cumulatively they cover every cell exactly once.
 
 Subcommands:
@@ -68,7 +68,10 @@ DEFAULT_ALL_MODELS_WEEKLY = 50_000_000  # placeholder; verify against dashboard
 DEFAULT_SESSION_ALL_MODELS = 5_000_000  # placeholder 5-hour rolling window cap
 DEFAULT_TOKENS_PER_CELL = 50_000        # conservative upper-bound for Haiku adversarial cell (actual batch-1 average was ~25k); quota-free
 DEFAULT_ANALYSIS_TOKENS = 100_000       # one Opus analysis subagent per batch (actual batch-1: ~82k; rounded up for headroom)
-DEFAULT_BATCH_SESSION_FRACTION = 0.5    # batch fills this much of one 5-hour session
+DEFAULT_BATCH_SESSION_FRACTION = 0.25   # batch fills this much of one 5-hour session
+                                        # (Phase D resample: tightened from 0.5
+                                        # to give smaller, faster-to-analyze
+                                        # batches against the 9020-cell matrix)
 DEFAULT_SEED = 42
 
 
