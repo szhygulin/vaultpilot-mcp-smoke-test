@@ -1,41 +1,37 @@
 #!/usr/bin/env python3
 """
 tools/sample_matrix_run.py — Partition (expert + newcomer) matrix cells into
-weekly samples that fit a budget; track per-week run progress.
+fixed-size batches, then track per-batch run progress. The user decides how
+many batches to dispatch per session / week / day; the tool just hands them
+the next pending batch and counts overall progress.
 
 Why this exists:
-  A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, which
-  exceeds the Max-x20 weekly Sonnet bucket. Splitting across ~3 weeks with
-  random partitioning lets every cell run exactly once over time without any
-  single week blowing the budget.
+  A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, well over
+  any single 5-hour Anthropic session and into the weekly Sonnet bucket too.
+  Splitting into batches sized to fill ~50% of one 5-hour all-models session
+  lets you dispatch 1-2 batches per session, paced however suits you.
 
 Sampling strategy:
   - Flatten 1110 cells (450 expert + 660 newcomer, each × {A, B, C}).
-  - Shuffle once with a fixed seed (default 42) — partition is deterministic
-    and reproducible from the seed.
-  - Split into weekly chunks of N cells, where
-        N = floor(SONNET_WEEKLY × FRACTION / TOKENS_PER_CELL)
-    Defaults: SONNET_WEEKLY=30M, FRACTION=0.9, TOKENS_PER_CELL=50k → N=540.
-  - Weekly chunks are non-overlapping; they cumulatively cover every cell
-    exactly once.
-  - Per-batch dispatch (within a week's run) uses BATCH_SIZE concurrent
-    subagents — bounded by the per-session rate-limit, not the weekly budget.
+  - Shuffle once with a fixed seed (default 42) — deterministic, reproducible.
+  - Slice into batches of N cells, where
+        N = floor(SESSION_ALL_MODELS × BATCH_SESSION_FRACTION / TOKENS_PER_CELL)
+    Defaults: 5M × 0.5 / 50k = 50 cells/batch → 23 batches total for 1110 cells.
+  - Each batch is non-overlapping; cumulatively they cover every cell exactly once.
 
 Subcommands:
   init                   Create partition.json + progress.json (one-time).
-  next-week              Print the next pending week's cells and write its
-                         scripts.json under runs/matrix-sampled/week-NN/.
-                         Marks the week as in_progress.
-  mark-completed --week N [--transcripts PATH]
-                         Mark week N as completed, optionally record where
-                         its transcripts live.
-  status                 Show overall progress.
+  next-batch             Print the next pending batch's cells and write its
+                         scripts.json under runs/matrix-sampled/batch-NN/.
+                         Marks the batch as in_progress.
+  mark-completed --batch N [--transcripts PATH]
+                         Mark batch N as completed.
+  status                 Show overall progress (X / total batches done).
 
 Outputs (under runs/matrix-sampled/):
-  partition.json         Immutable plan — never edit by hand. Re-run
-                         `init --force` if you really need to reshuffle.
-  progress.json          Per-week status: pending | in_progress | completed.
-  week-NN/scripts.json   The cells dispatched that week, in the format
+  partition.json         Immutable plan — never edit by hand.
+  progress.json          Per-batch status: pending | in_progress | completed.
+  batch-NN/scripts.json  The cells dispatched in batch N, in the format
                          expected by the skill's Phase 3 dispatch.
 """
 import argparse
@@ -52,14 +48,11 @@ SAMPLE_DIR = f'{REPO}/runs/matrix-sampled'
 PARTITION_PATH = f'{SAMPLE_DIR}/partition.json'
 PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 
-# Defaults align with skill/SKILL.md Phase 2.5 anchors. Override via flags
-# if the user's plan / model behavior changes.
+# Defaults align with skill/SKILL.md Phase 2.5 anchors.
 DEFAULT_SONNET_WEEKLY = 30_000_000
 DEFAULT_ALL_MODELS_WEEKLY = 50_000_000
-DEFAULT_SESSION_ALL_MODELS = 5_000_000  # 5-hour window all-models cap; rough Max-20x estimate, override via flag
-DEFAULT_FRACTION = 0.9
+DEFAULT_SESSION_ALL_MODELS = 5_000_000  # 5-hour all-models cap, override via flag
 DEFAULT_TOKENS_PER_CELL = 50_000
-DEFAULT_ANALYSIS_TOKENS = 250_000
 DEFAULT_BATCH_SESSION_FRACTION = 0.5  # batch fills this much of one 5-hour session
 DEFAULT_SEED = 42
 
@@ -94,12 +87,6 @@ def cmd_init(args: argparse.Namespace) -> None:
     rnd = random.Random(args.seed)
     rnd.shuffle(cells)
 
-    cells_per_week = int(args.sonnet_weekly * args.fraction / args.per_cell)
-    if cells_per_week < 1:
-        sys.exit("derived cells_per_week < 1 — check your budget args")
-
-    # Auto-derive batch size to fill DEFAULT_BATCH_SESSION_FRACTION of one
-    # 5-hour all-models session; --batch-size overrides.
     if args.batch_size is None:
         batch_size = max(1, int(args.session_all_models *
                                 DEFAULT_BATCH_SESSION_FRACTION /
@@ -107,34 +94,27 @@ def cmd_init(args: argparse.Namespace) -> None:
     else:
         batch_size = args.batch_size
 
-    weeks = [cells[i:i + cells_per_week]
-             for i in range(0, len(cells), cells_per_week)]
-    batches_per_week = [(len(w) + batch_size - 1) // batch_size for w in weeks]
-    total_batches = sum(batches_per_week)
+    batches = [cells[i:i + batch_size]
+               for i in range(0, len(cells), batch_size)]
 
     os.makedirs(SAMPLE_DIR, exist_ok=True)
 
     partition = {
         'created_at': _now(),
         'seed': args.seed,
-        'cells_per_week': cells_per_week,
+        'batch_size': batch_size,
         'budget_constraint': {
             'sonnet_weekly_tokens': args.sonnet_weekly,
             'all_models_weekly_tokens': args.all_models_weekly,
             'session_all_models_tokens': args.session_all_models,
-            'budget_fraction': args.fraction,
             'tokens_per_cell': args.per_cell,
-            'analysis_tokens': args.analysis_tokens,
             'batch_session_fraction': DEFAULT_BATCH_SESSION_FRACTION,
-            'derived_cells_per_week': cells_per_week,
         },
-        'batch_size': batch_size,
         'total_cells': len(cells),
-        'total_weeks': len(weeks),
-        'total_batches': total_batches,
-        'weeks': [
-            {'week': i + 1, 'batches': batches_per_week[i], 'cells': w}
-            for i, w in enumerate(weeks)
+        'total_batches': len(batches),
+        'batches': [
+            {'batch': i + 1, 'cells': b}
+            for i, b in enumerate(batches)
         ],
     }
     with open(PARTITION_PATH, 'w') as f:
@@ -142,19 +122,17 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     progress = {
         'created_at': partition['created_at'],
-        'total_weeks': len(weeks),
-        'total_batches': total_batches,
-        'weeks': [
+        'total_batches': len(batches),
+        'batches': [
             {
-                'week': i + 1,
-                'cell_count': len(w),
-                'batches': batches_per_week[i],
+                'batch': i + 1,
+                'cell_count': len(b),
                 'status': 'pending',
                 'started_at': None,
                 'completed_at': None,
                 'transcripts_dir': None,
             }
-            for i, w in enumerate(weeks)
+            for i, b in enumerate(batches)
         ],
     }
     with open(PROGRESS_PATH, 'w') as f:
@@ -166,12 +144,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     pct_batch_session = per_batch_tokens / args.session_all_models * 100
 
     print(f"wrote {PARTITION_PATH}")
-    print(f"  total cells:    {partition['total_cells']}")
-    print(f"  cells/week:     {partition['cells_per_week']}")
-    print(f"  total weeks:    {partition['total_weeks']}")
-    print(f"  batch:          {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
-    print(f"  total batches:  {total_batches} "
-          f"(per week: {', '.join(str(b) for b in batches_per_week)})")
+    print(f"  total cells:     {partition['total_cells']}")
+    print(f"  batch size:      {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
+    print(f"  total batches:   {partition['total_batches']}")
     print()
     print(f"Per batch vs Max-20x caps:")
     print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
@@ -183,25 +158,25 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"  seed: {partition['seed']}")
 
 
-def cmd_next_week(args: argparse.Namespace) -> None:
+def cmd_next_batch(args: argparse.Namespace) -> None:
     if not os.path.exists(PROGRESS_PATH):
         sys.exit("No partition yet. Run `init` first.")
     progress = json.load(open(PROGRESS_PATH))
     partition = json.load(open(PARTITION_PATH))
 
-    pending = [w for w in progress['weeks'] if w['status'] == 'pending']
+    pending = [b for b in progress['batches'] if b['status'] == 'pending']
     if not pending:
-        in_prog = [w for w in progress['weeks'] if w['status'] == 'in_progress']
+        in_prog = [b for b in progress['batches'] if b['status'] == 'in_progress']
         if in_prog:
-            print(f"week {in_prog[0]['week']} already in_progress — "
+            print(f"batch {in_prog[0]['batch']} already in_progress — "
                   f"finish it (mark-completed) before starting next.")
         else:
-            print("All weeks completed.")
+            print("All batches completed.")
         return
 
-    week_n = pending[0]['week']
-    week_cells = next(w['cells'] for w in partition['weeks']
-                      if w['week'] == week_n)
+    batch_n = pending[0]['batch']
+    batch_cells = next(b['cells'] for b in partition['batches']
+                       if b['batch'] == batch_n)
 
     expert = json.load(open(EXPERT_PATH))
     newcomer = json.load(open(NEWCOMER_PATH))
@@ -209,7 +184,7 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     newcomer_by_id = {r['id']: r for r in newcomer['rows']}
 
     hydrated = []
-    for c in week_cells:
+    for c in batch_cells:
         row = (expert_by_id if c['matrix'] == 'expert'
                else newcomer_by_id)[c['row_id']]
         hydrated.append({
@@ -223,20 +198,17 @@ def cmd_next_week(args: argparse.Namespace) -> None:
             'attack': row['cells'][c['role']],
         })
 
-    week_dir = f'{SAMPLE_DIR}/week-{week_n:02d}'
-    os.makedirs(week_dir, exist_ok=True)
-    scripts_path = f'{week_dir}/scripts.json'
+    batch_dir = f'{SAMPLE_DIR}/batch-{batch_n:02d}'
+    os.makedirs(batch_dir, exist_ok=True)
+    scripts_path = f'{batch_dir}/scripts.json'
 
     out = {
         '_comment': (
-            f'Week {week_n} of {progress["total_weeks"]} — '
-            f'{len(hydrated)} cells dispatched in this run. '
-            'Schema is the same shape Phase 3 of skill/SKILL.md expects, '
-            'with role + attack added per script for the adversarial '
-            'subagent prompt template.'
+            f'Batch {batch_n} of {progress["total_batches"]} — '
+            f'{len(hydrated)} cells. Dispatch all of them concurrently '
+            'via skill/SKILL.md Phase 3.'
         ),
-        'week': week_n,
-        'batch_size': partition['batch_size'],
+        'batch': batch_n,
         'addressBook': expert.get('addressBook', {}),
         'roleLegend': expert.get('roleLegend', {}),
         'scripts': hydrated,
@@ -260,39 +232,29 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     sonnet_weekly = bc['sonnet_weekly_tokens']
     all_models_weekly = bc.get('all_models_weekly_tokens', DEFAULT_ALL_MODELS_WEEKLY)
     session_all_models = bc.get('session_all_models_tokens', DEFAULT_SESSION_ALL_MODELS)
-    batch_size = partition['batch_size']
 
-    per_batch_tokens = batch_size * per_cell
-    pct_batch_sonnet_weekly = per_batch_tokens / sonnet_weekly * 100
-    pct_batch_all_weekly = per_batch_tokens / all_models_weekly * 100
+    per_batch_tokens = len(hydrated) * per_cell
+    pct_batch_sonnet = per_batch_tokens / sonnet_weekly * 100
+    pct_batch_all = per_batch_tokens / all_models_weekly * 100
     pct_batch_session = per_batch_tokens / session_all_models * 100
 
-    batches_this_week = next(w['batches'] for w in partition['weeks']
-                             if w['week'] == week_n)
-    total_batches = partition.get(
-        'total_batches',
-        sum(w.get('batches', 0) for w in partition['weeks'])
-    )
-    batches_done = sum(
-        w.get('batches', 0)
-        for w in progress['weeks']
-        if w['status'] == 'completed'
-    )
+    total_batches = progress['total_batches']
+    batches_done = sum(1 for b in progress['batches']
+                       if b['status'] == 'completed')
 
     print(f"wrote {scripts_path}")
     print()
-    print(f"=== Phase 2.5 cost preflight (week {week_n}) ===")
-    print(f"Sample: {len(hydrated)} cells "
+    print(f"=== Phase 2.5 cost preflight (batch {batch_n}) ===")
+    print(f"Sample:   {len(hydrated)} cells "
           f"(expert: {matrix_counts['expert']}, newcomer: {matrix_counts['newcomer']}; "
           f"A: {role_counts['A']}, B: {role_counts['B']}, C: {role_counts['C']})")
-    print(f"Batch:  {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
-    print(f"Batches this week: {batches_this_week}  "
-          f"|  Plan: {batches_done} / {total_batches} batches done")
+    print(f"Tokens:   ~{per_batch_tokens / 1e6:.2f}M for this batch")
+    print(f"Progress: {batches_done} / {total_batches} batches done")
     print()
     print(f"Per batch vs Max-20x caps:")
-    print(f"  Sonnet weekly:       ~{pct_batch_sonnet_weekly:.1f}% of bucket "
+    print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
           f"(anchor ~{sonnet_weekly / 1e6:.0f}M)")
-    print(f"  All-models weekly:   ~{pct_batch_all_weekly:.1f}% of bucket "
+    print(f"  All-models weekly:   ~{pct_batch_all:.1f}% of bucket "
           f"(anchor ~{all_models_weekly / 1e6:.0f}M)")
     print(f"  All-models session:  ~{pct_batch_session:.1f}% of bucket "
           f"(anchor ~{session_all_models / 1e6:.0f}M)")
@@ -302,23 +264,25 @@ def cmd_next_week(args: argparse.Namespace) -> None:
           f"`--session-all-models`.")
     print()
     print(f"Next: orchestrator confirms with user, then dispatch Phase 3 "
-          f"over {scripts_path}, then `mark-completed --week {week_n}`.")
+          f"over {scripts_path}, then `mark-completed --batch {batch_n}`.")
 
 
 def cmd_mark_completed(args: argparse.Namespace) -> None:
     if not os.path.exists(PROGRESS_PATH):
         sys.exit("No partition yet. Run `init` first.")
     progress = json.load(open(PROGRESS_PATH))
-    week = next((w for w in progress['weeks'] if w['week'] == args.week), None)
-    if not week:
-        sys.exit(f"Week {args.week} not in partition (have weeks 1..{progress['total_weeks']}).")
-    week['status'] = 'completed'
-    week['completed_at'] = _now()
+    batch = next((b for b in progress['batches']
+                  if b['batch'] == args.batch), None)
+    if not batch:
+        sys.exit(f"Batch {args.batch} not in partition (have batches "
+                 f"1..{progress['total_batches']}).")
+    batch['status'] = 'completed'
+    batch['completed_at'] = _now()
     if args.transcripts:
-        week['transcripts_dir'] = args.transcripts
+        batch['transcripts_dir'] = args.transcripts
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
-    print(f"week {args.week} marked completed at {week['completed_at']}")
+    print(f"batch {args.batch} marked completed at {batch['completed_at']}")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -326,18 +290,18 @@ def cmd_status(args: argparse.Namespace) -> None:
         sys.exit("No partition yet. Run `init` first.")
     progress = json.load(open(PROGRESS_PATH))
     counts = {'completed': 0, 'in_progress': 0, 'pending': 0}
-    for w in progress['weeks']:
-        counts[w['status']] += 1
-    print(f"weeks: {progress['total_weeks']}  "
-          f"(completed={counts['completed']}  "
-          f"in_progress={counts['in_progress']}  "
-          f"pending={counts['pending']})")
-    for w in progress['weeks']:
-        marker = {'completed': '[X]', 'in_progress': '[.]', 'pending': '[ ]'}[w['status']]
-        started = w.get('started_at') or '—'
-        completed = w.get('completed_at') or '—'
-        print(f"  {marker} week {w['week']:02d}  {w['cell_count']:>4} cells  "
-              f"{w['status']:12s}  started={started}  completed={completed}")
+    for b in progress['batches']:
+        counts[b['status']] += 1
+    total = progress['total_batches']
+    print(f"batches: {counts['completed']} / {total} done  "
+          f"(in_progress={counts['in_progress']}  pending={counts['pending']})")
+    if args.verbose:
+        for b in progress['batches']:
+            marker = {'completed': '[X]', 'in_progress': '[.]', 'pending': '[ ]'}[b['status']]
+            started = b.get('started_at') or '—'
+            completed = b.get('completed_at') or '—'
+            print(f"  {marker} batch {b['batch']:02d}  {b['cell_count']:>3} cells  "
+                  f"{b['status']:12s}  started={started}  completed={completed}")
 
 
 def main() -> None:
@@ -357,33 +321,30 @@ def main() -> None:
                         help='All-models weekly budget in tokens (default: 50M)')
     p_init.add_argument('--session-all-models', dest='session_all_models',
                         type=int, default=DEFAULT_SESSION_ALL_MODELS,
-                        help='5-hour-window all-models cap in tokens (default: 5M; tune to actual plan)')
-    p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
-                        type=int, default=DEFAULT_ANALYSIS_TOKENS,
-                        help='Phase 5 analysis subagent token estimate (default: 250k)')
-    p_init.add_argument('--fraction', type=float, default=DEFAULT_FRACTION,
-                        help='Fraction of weekly budget to use (default: 0.9)')
+                        help='5-hour all-models cap in tokens (default: 5M; tune to plan)')
     p_init.add_argument('--per-cell', dest='per_cell',
                         type=int, default=DEFAULT_TOKENS_PER_CELL,
                         help='Tokens per cell estimate (default: 50k)')
     p_init.add_argument('--batch-size', dest='batch_size',
                         type=int, default=None,
-                        help='Concurrent subagents per dispatch batch '
+                        help='Concurrent subagents per batch '
                              '(default: auto-derive to fill ~50%% of session anchor)')
     p_init.add_argument('--force', action='store_true',
                         help='Overwrite existing partition.json + progress.json')
     p_init.set_defaults(func=cmd_init)
 
-    p_next = sub.add_parser('next-week',
-                            help='Print and persist next pending week.')
-    p_next.set_defaults(func=cmd_next_week)
+    p_next = sub.add_parser('next-batch',
+                            help='Print and persist next pending batch.')
+    p_next.set_defaults(func=cmd_next_batch)
 
-    p_mark = sub.add_parser('mark-completed', help='Mark a week as run.')
-    p_mark.add_argument('--week', type=int, required=True)
+    p_mark = sub.add_parser('mark-completed', help='Mark a batch as run.')
+    p_mark.add_argument('--batch', type=int, required=True)
     p_mark.add_argument('--transcripts', help='Path to transcripts dir.')
     p_mark.set_defaults(func=cmd_mark_completed)
 
     p_stat = sub.add_parser('status', help='Show progress.')
+    p_stat.add_argument('-v', '--verbose', action='store_true',
+                        help='Show per-batch detail.')
     p_stat.set_defaults(func=cmd_status)
 
     args = ap.parse_args()

@@ -9,40 +9,40 @@ Helper scripts used during smoke-test runs. These are the little utilities the p
 | `parse_summary_adversarial.py` | Same as above, plus the `[ADVERSARIAL_RESULT]` block (role / attack / defense_layer / did_user_get_tricked) | Phase 5 step 5.2 (adversarial mode) |
 | `find_missing_transcripts.sh` | Diff between expected script IDs (from a `scripts.json`) and on-disk `transcripts/*.txt` — surfaces which subagents haven't completed yet | Phase 3 monitoring |
 | `wait_for_transcripts.sh` | Block until a target transcript count is reached. Designed for `Bash(run_in_background:true)` so the parent agent gets a single "all done" notification | Phase 3 / 4 transition |
-| `sample_matrix_run.py` | Partition the (expert + newcomer) matrix into weekly random samples that fit the Sonnet-weekly budget; track per-week progress so every cell runs exactly once across N weeks | Phase 2.5 (cost preflight) for matrix-mode runs |
+| `sample_matrix_run.py` | Partition the (expert + newcomer) matrix into fixed-size random batches; track per-batch progress so every cell runs exactly once. User decides how many batches to dispatch per session/week. | Phase 2.5 (cost preflight) for matrix-mode runs |
 
 ### `sample_matrix_run.py` — usage
 
-A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, which exceeds the Max-x20 weekly Sonnet bucket. This tool partitions the work into non-overlapping weekly samples sized to fit ~90% of the weekly budget, with a fixed seed so the partition is deterministic.
+A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, well over any single 5-hour Anthropic session and into the weekly Sonnet bucket too. This tool partitions the work into fixed-size batches (default ~50 cells = ~2.5M tokens, sized to fill ~50% of one 5-hour all-models session). Dispatch batches at whatever cadence suits you; the tool tracks total progress.
 
 ```bash
 # One-time: build the partition + progress files (already done if committed)
 python3 tools/sample_matrix_run.py init [--seed N] \
     [--sonnet-weekly 30000000] [--all-models-weekly 50000000] \
-    [--fraction 0.9] [--per-cell 50000] [--analysis-tokens 250000] \
-    [--batch-size 15]
+    [--session-all-models 5000000] [--per-cell 50000] \
+    [--batch-size N]   # auto-derived from session anchor if omitted
 
-# Each week: get the next pending sample, writes runs/matrix-sampled/week-NN/scripts.json
-# AND prints the Phase-2.5-shaped cost preflight report (Sonnet bucket %,
-# all-models bucket %, dispatch + analysis token estimates).
-python3 tools/sample_matrix_run.py next-week
+# Get the next pending batch, writes runs/matrix-sampled/batch-NN/scripts.json
+# AND prints the Phase 2.5 cost preflight report (per-batch % of each cap +
+# total progress).
+python3 tools/sample_matrix_run.py next-batch
 
-# After dispatching + analyzing the week's run
-python3 tools/sample_matrix_run.py mark-completed --week N \
-    [--transcripts runs/matrix-sampled/week-NN/transcripts]
+# After dispatching the batch
+python3 tools/sample_matrix_run.py mark-completed --batch N \
+    [--transcripts runs/matrix-sampled/batch-NN/transcripts]
 
 # Anytime: see overall progress
-python3 tools/sample_matrix_run.py status
+python3 tools/sample_matrix_run.py status [-v]
 ```
 
-The `next-week` output is the Phase 2.5 cost preflight report — surface it to the user verbatim and wait for confirmation before dispatching.
+The `next-batch` output is the Phase 2.5 cost preflight report — surface it to the user verbatim and wait for confirmation before dispatching.
 
 State files (under `runs/matrix-sampled/`):
 - `partition.json` — immutable plan; `init --force` to reshuffle from a new seed
-- `progress.json` — `pending | in_progress | completed` per week
-- `week-NN/scripts.json` — the cells dispatched that week, in the format the skill's Phase 3 dispatch consumes (one entry per cell, with role + attack inlined)
+- `progress.json` — `pending | in_progress | completed` per batch
+- `batch-NN/scripts.json` — the cells dispatched in batch N, in the format the skill's Phase 3 dispatch consumes (one entry per cell, with role + attack inlined)
 
-Default budget (30M Sonnet weekly × 0.9 × 50k tokens/cell = 540 cells/week → 3 weeks for the full 1110-cell matrix). Override the budget args if your plan, model behavior, or the skill's per-cell anchor changes.
+Default partition: 50 cells/batch × 23 batches = 1110 cells. Override budget anchors via flags if your plan changes; `--batch-size` overrides the auto-derived value if you want a different fill ratio.
 
 ## Conventions
 

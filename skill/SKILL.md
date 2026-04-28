@@ -155,20 +155,20 @@ Recompute and re-prompt if the user changes any of:
 
 If the user accepts: proceed to Phase 3. If the user wants to scale down (e.g. "use the sparse vector instead", "skip half the categories"), recompute the estimate against the new plan and re-prompt before dispatching.
 
-### When the matrix exceeds weekly budget
+### When the matrix exceeds session / weekly budget
 
-If the planned run is over ~90% of the user's weekly Sonnet bucket, propose **partitioning into weekly samples** rather than scaling down or proceeding-with-overage. Use `tools/sample_matrix_run.py`:
+If the planned run is over the user's available weekly Sonnet or 5-hour all-models capacity, propose **partitioning into batches** rather than scaling down or proceeding-with-overage. Use `tools/sample_matrix_run.py`:
 
 ```bash
-python3 tools/sample_matrix_run.py init           # one-time, deterministic seed
-python3 tools/sample_matrix_run.py next-week      # writes runs/matrix-sampled/week-NN/scripts.json
-# … dispatch this week's scripts.json via Phase 3 …
-python3 tools/sample_matrix_run.py mark-completed --week NN
+python3 tools/sample_matrix_run.py init             # one-time, deterministic seed
+python3 tools/sample_matrix_run.py next-batch       # writes runs/matrix-sampled/batch-NN/scripts.json
+# … dispatch this batch's scripts.json via Phase 3 …
+python3 tools/sample_matrix_run.py mark-completed --batch NN
 ```
 
-The tool flattens both matrices, shuffles once with a fixed seed, and partitions into non-overlapping weekly chunks sized to ~90% of the weekly Sonnet bucket. Each cell runs exactly once across N weeks. Default partition (3 weeks × 540 cells) covers all 1110 cells in three weekly resets.
+The tool flattens both matrices, shuffles once with a fixed seed, and slices into fixed-size batches sized to fill ~50% of one 5-hour all-models session (default 50 cells / ~2.5M tokens per batch → 23 batches for the full 1110-cell matrix). The user decides how many batches to dispatch per week / per session — the tool just hands them the next pending batch and counts overall progress.
 
-Each week's `scripts.json` is in the same shape Phase 3 dispatches consume, with `role` and `attack` already inlined per cell — the dispatch subagent prompt template just reads them through.
+Each batch's `scripts.json` is in the same shape Phase 3 dispatches consume, with `role` and `attack` already inlined per cell. Dispatch all cells in the batch concurrently (the batch IS the dispatch unit) — no further per-batch sub-batching needed.
 
 ---
 
@@ -185,7 +185,7 @@ Workdir layout:
 
 Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "sonnet"`. The orchestrator running this skill stays on its default model (Opus); only the spawned subagents run on Sonnet — they're doing high-volume role-play of threat-model scenarios where the extra reasoning headroom over Haiku materially changes whether subtle attacks (homoglyph, approval-cloak, chain-swap) land convincingly enough to test the defense. The cost premium is accepted for this skill specifically; on Max x20 plans Sonnet usage is billed separately while Haiku is included, so this is a deliberate quality-over-cost choice for adversarial smoke testing.
 
-**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. **Default for Sonnet-mode runs: 15/batch** (slightly higher than the historical Haiku-tuned 10/batch, because Sonnet's per-call latency is somewhat higher and 15 keeps wall-clock manageable while staying under typical 5-hour-window TPM caps). Tune down to 10 or below on rate-limit errors; go higher only after early batches have completed cleanly. Sampled weekly runs from `tools/sample_matrix_run.py` carry the recommended batch size in their `scripts.json` `batch_size` field — read it from there.
+**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. **Default for Sonnet-mode honest / sparse-adversarial runs: 15/batch** (Sonnet-tuned, up from the historical Haiku 10/batch). For matrix-sampled runs from `tools/sample_matrix_run.py`, each emitted `batch-NN/scripts.json` IS one dispatch batch (default 50 cells, sized to fill ~50% of one 5-hour all-models session) — dispatch all of its cells concurrently, no sub-batching. Tune down to 10 or below on rate-limit errors; go higher only after early batches have completed cleanly.
 
 ### Honest mode prompt template
 
