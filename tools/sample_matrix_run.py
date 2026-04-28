@@ -46,8 +46,7 @@ import time
 from collections import Counter
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXPERT_PATH = f'{REPO}/test-vectors/expert-matrix.json'
-NEWCOMER_PATH = f'{REPO}/test-vectors/newcomer-matrix.json'
+MATRIX_PATH = f'{REPO}/test-vectors/matrix.json'
 SAMPLE_DIR = f'{REPO}/runs/matrix-sampled'
 PARTITION_PATH = f'{SAMPLE_DIR}/partition.json'
 PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
@@ -77,22 +76,22 @@ def _now() -> str:
     return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
 
 
-def _load_matrix_cells(path: str, label: str) -> list[dict]:
-    matrix = json.load(open(path))
+def _flatten_all() -> list[dict]:
+    """Flatten the unified matrix into one cell per (row, role).
+    Each row carries an `audience` tag (expert | newcomer) preserved here."""
+    matrix = json.load(open(MATRIX_PATH))
+    roles = list(matrix['roleLegend'].keys())
     cells = []
     for row in matrix['rows']:
-        for role in ('A', 'B', 'C'):
+        for role in roles:
+            if row['cells'].get(role) is None:
+                continue  # row may not define every role; skip empties
             cells.append({
-                'matrix': label,
+                'audience': row.get('audience', 'unknown'),
                 'row_id': row['id'],
                 'role': role,
             })
     return cells
-
-
-def _flatten_all() -> list[dict]:
-    return _load_matrix_cells(EXPERT_PATH, 'expert') + \
-           _load_matrix_cells(NEWCOMER_PATH, 'newcomer')
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -197,18 +196,19 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     batch_cells = next(b['cells'] for b in partition['batches']
                        if b['batch'] == batch_n)
 
-    expert = json.load(open(EXPERT_PATH))
-    newcomer = json.load(open(NEWCOMER_PATH))
-    expert_by_id = {r['id']: r for r in expert['rows']}
-    newcomer_by_id = {r['id']: r for r in newcomer['rows']}
+    matrix = json.load(open(MATRIX_PATH))
+    # Index by (audience, row_id) since row IDs may collide across audiences
+    # (e.g. expert "001" and newcomer "n001" don't, but the schema doesn't
+    # enforce that — be safe).
+    rows_by_key = {(r.get('audience', 'unknown'), r['id']): r
+                   for r in matrix['rows']}
 
     hydrated = []
     for c in batch_cells:
-        row = (expert_by_id if c['matrix'] == 'expert'
-               else newcomer_by_id)[c['row_id']]
+        row = rows_by_key[(c['audience'], c['row_id'])]
         hydrated.append({
-            'id': f"{c['matrix']}-{c['row_id']}-{c['role']}",
-            'matrix': c['matrix'],
+            'id': f"{c['audience']}-{c['row_id']}-{c['role']}",
+            'audience': c['audience'],
             'row_id': c['row_id'],
             'role': c['role'],
             'category': row['category'],
@@ -240,11 +240,11 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
 
-    matrix_counts = {'expert': 0, 'newcomer': 0}
-    role_counts = {'A': 0, 'B': 0, 'C': 0}
+    audience_counts = {'expert': 0, 'newcomer': 0}
+    role_counts = {}
     for c in hydrated:
-        matrix_counts[c['matrix']] += 1
-        role_counts[c['role']] += 1
+        audience_counts[c['audience']] = audience_counts.get(c['audience'], 0) + 1
+        role_counts[c['role']] = role_counts.get(c['role'], 0) + 1
 
     bc = partition['budget_constraint']
     per_cell = bc['tokens_per_cell']
@@ -263,9 +263,10 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     print(f"wrote {scripts_path}")
     print()
     print(f"=== Phase 2.5 cost preflight (batch {batch_n}) ===")
+    role_summary = ', '.join(f"{r}: {n}" for r, n in sorted(role_counts.items()))
     print(f"Sample:     {len(hydrated)} cells "
-          f"(expert: {matrix_counts['expert']}, newcomer: {matrix_counts['newcomer']}; "
-          f"A: {role_counts['A']}, B: {role_counts['B']}, C: {role_counts['C']})")
+          f"(expert: {audience_counts.get('expert', 0)}, "
+          f"newcomer: {audience_counts.get('newcomer', 0)}; {role_summary})")
     print(f"Throughput: ~{dispatch_throughput / 1e6:.2f}M Haiku tokens "
           f"(dispatch — quota-free)")
     print(f"            ~{analysis_tokens / 1e6:.2f}M Opus tokens "
