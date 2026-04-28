@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Build test-vectors/adversarial.json from:
-  - runs/pass-2-adversarial/scripts.json   (initial 44 with attack metadata)
-  - runs/pass-2-adversarial/enrichment.json (security supplement)
+  - runs/pass-2-adversarial-pruned/scripts.json   (initial 44 with attack metadata)
+  - runs/pass-2-adversarial-pruned/enrichment.json (security supplement)
   - hardcoded b-script map (67 expansion scripts retesting base catalog adversarially)
-  - runs/pass-1-honest/scripts.json (source of base script text for b-scripts)
+  - runs/pass-1-honest-pruned/scripts.json (source of base script text for b-scripts)
 
 Output is a single canonical JSON test-vector file with 111 adversarial entries.
 """
@@ -12,11 +12,11 @@ import json, os, sys
 
 REPO = os.path.dirname(os.path.abspath(__file__)) + '/..'
 
-with open(f'{REPO}/runs/pass-1-honest/scripts.json') as f:
+with open(f'{REPO}/runs/pass-1-honest-pruned/scripts.json') as f:
     base = json.load(f)
 base_by_id = {s['id']: s for s in base['scripts']}
 
-with open(f'{REPO}/runs/pass-2-adversarial/scripts.json') as f:
+with open(f'{REPO}/runs/pass-2-adversarial-pruned/scripts.json') as f:
     adv_initial = json.load(f)
 
 # 67 b-script expansion: each retests a base-catalog script with an adversarial role.

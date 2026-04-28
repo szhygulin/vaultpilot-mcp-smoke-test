@@ -47,7 +47,7 @@ Across both passes (231 scripts: 120 honest baseline + 111 adversarial), some cr
 
 ## Pass 1 — Honest baseline (mcp-smoke-test)
 
-**Workdir:** `runs/pass-1-honest/` · **Detailed report:** `runs/pass-1-honest/findings.md` · **Tracker issue:** [#448](https://github.com/szhygulin/vaultpilot-mcp/issues/448)
+**Workdir:** `runs/pass-1-honest-pruned/` · **Detailed report:** `runs/pass-1-honest-pruned/findings.md` · **Tracker issue:** [#448](https://github.com/szhygulin/vaultpilot-mcp/issues/448)
 
 **Scripts:** 120 covering the full feature surface — sends, swaps, stakes, lending, LP, NFT, portfolio, ENS, hardware pairing, multisig, education, edge cases, security probes — across EVM (ethereum, base, arbitrum, optimism, polygon), BTC, Solana, TRON.
 
@@ -74,7 +74,7 @@ Across both passes (231 scripts: 120 honest baseline + 111 adversarial), some cr
 
 ## Pass 2 — Adversarial red-team (crypto-security-smoke-test)
 
-**Workdir:** `runs/pass-2-adversarial/` · **Detailed reports:** `findings_adversarial.md` (initial 44) + `findings_adversarial_full.md` (expanded 111) · **Tracker issue:** [#456](https://github.com/szhygulin/vaultpilot-mcp/issues/456) (with [expansion comment](https://github.com/szhygulin/vaultpilot-mcp/issues/456#issuecomment-4331676859))
+**Workdir:** `runs/pass-2-adversarial-pruned/` · **Detailed reports:** `findings_adversarial.md` (initial 44) + `findings_adversarial_full.md` (expanded 111) · **Tracker issue:** [#456](https://github.com/szhygulin/vaultpilot-mcp/issues/456) (with [expansion comment](https://github.com/szhygulin/vaultpilot-mcp/issues/456#issuecomment-4331676859))
 
 **Scripts:** **111 total** — initial 44 (security-enriched + 14 base retests) + **67-script expansion** covering the full base signing surface (sends/swaps/stakes/lending/LP/multisig/BTC/WETH/revoke across EVM, Solana, TRON, BTC). Each subagent assigned one of 5 threat-model roles.
 
@@ -133,12 +133,12 @@ These should ship coordinated with a sentinel bump on `vaultpilot-preflight/SKIL
 **Issues filed against `szhygulin/vaultpilot-mcp`:** 34 total — 22 from Pass 1 (#427–#447 + tracker #448), 6 from Pass 2 initial (#450–#455 + tracker #456), 4 from the 67-script expansion (#460–#463) + tracker comment.
 
 **Local artifacts:**
-- `runs/pass-1-honest/scripts.json` — 120-script catalog
-- `runs/pass-1-honest/transcripts/*.txt` — 120 baseline transcripts
-- `runs/pass-1-honest/findings.md` — baseline analysis
-- `runs/pass-2-adversarial/scripts.json` — 44-script adversarial catalog with role assignments
-- `runs/pass-2-adversarial/transcripts/*.txt` — **111 adversarial transcripts** (44 initial + 67 b-prefixed)
-- `runs/pass-2-adversarial/findings_adversarial.md` — initial 44-script analysis
-- `runs/pass-2-adversarial/findings_adversarial_full.md` — **expanded 111-script analysis (latest)**
-- `runs/pass-2-adversarial/all_transcripts_full.txt` — concatenated 111-script corpus (1.8 MB)
-- `runs/pass-2-adversarial/summary_full.txt` — per-script ATTACK + ADVERSARIAL_RESULT extract
+- `runs/pass-1-honest-pruned/scripts.json` — 120-script catalog
+- `runs/pass-1-honest-pruned/transcripts/*.txt` — 120 baseline transcripts
+- `runs/pass-1-honest-pruned/findings.md` — baseline analysis
+- `runs/pass-2-adversarial-pruned/scripts.json` — 44-script adversarial catalog with role assignments
+- `runs/pass-2-adversarial-pruned/transcripts/*.txt` — **111 adversarial transcripts** (44 initial + 67 b-prefixed)
+- `runs/pass-2-adversarial-pruned/findings_adversarial.md` — initial 44-script analysis
+- `runs/pass-2-adversarial-pruned/findings_adversarial_full.md` — **expanded 111-script analysis (latest)**
+- `runs/pass-2-adversarial-pruned/all_transcripts_full.txt` — concatenated 111-script corpus (1.8 MB)
+- `runs/pass-2-adversarial-pruned/summary_full.txt` — per-script ATTACK + ADVERSARIAL_RESULT extract

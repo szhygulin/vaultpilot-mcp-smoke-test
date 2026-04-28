@@ -150,14 +150,14 @@ For protection rules matching this repo, see `gh api -X PUT repos/.../branches/m
 │   └── README.md
 │
 └── runs/                              # frozen test results — one subdir per pass
-    ├── pass-1-honest/                 # Pass 1: honest baseline
+    ├── pass-1-honest-pruned/          # Pass 1: honest baseline (pruned 120-script run)
     │   ├── scripts.json               # 120-script catalog
     │   ├── transcripts/NNN.txt        # 120 individual transcripts
     │   ├── all_transcripts.txt        # concatenated corpus
     │   ├── summary.txt                # per-script structured extract
     │   └── findings.md                # full analysis
     │
-    └── pass-2-adversarial/            # Pass 2: red-team
+    └── pass-2-adversarial-pruned/     # Pass 2: red-team (pruned 111-script run)
         ├── scripts.json               # 44-script initial adversarial catalog (with role tags)
         ├── enrichment.json            # 30 security-enriched scripts (121-150)
         ├── scripts-base.json          # copy of Pass-1 scripts.json for reference
