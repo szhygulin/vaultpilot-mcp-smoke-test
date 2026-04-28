@@ -111,7 +111,9 @@ Workdir layout:
 └── (later) all_transcripts.txt, summary.txt, findings.md
 ```
 
-Dispatch in **background batches of 10** using `Agent` with `run_in_background: true` and `subagent_type: "general-purpose"`.
+Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "haiku"`. The orchestrator running this skill stays on its default model (Opus); only the spawned subagents run on Haiku — they're doing high-volume, well-scoped simulation work where Haiku is sufficient and the cost difference at 120+ subagents is material.
+
+**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. Historically 10/batch has been a reasonable default, but don't treat it as fixed — go larger when the MCP is fast and rate limits are healthy, smaller when batches are throwing rate-limit errors or when you want to inspect early results before fanning out further.
 
 ### Honest mode prompt template
 
@@ -171,11 +173,12 @@ REPORT: same standard format PLUS [ADVERSARIAL_RESULT]:
 
 The subagent must NOT actually broadcast a transaction, even simulated. The "attack" is recorded as a written description. The smoke test measures **whether the defenses would have stopped it**, not whether the attack worked in production.
 
-### Why batches of 10 in background
+### Why batched background dispatch
 
 - Parent context stays uncluttered (notifications come back; parent doesn't block).
 - 120 agents × full conversations is expensive; batching avoids API rate-limit pile-ups.
 - Don't poll progress — the harness will notify on each completion.
+- Size each batch dynamically (see Phase 3 dispatch note). Adapt to live signal — rate-limit responses, parent-context pressure, and whether early transcripts indicate the prompt template needs adjustment before fanning out wider.
 
 ### Why the 8-tool-call cap
 
@@ -210,7 +213,7 @@ Optionally produce a structured per-script summary with a small Python script ex
 
 ## Phase 5 — Analyze
 
-Delegate to a **fresh subagent** (clean context).
+Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "haiku"`. As in Phase 3, the orchestrator stays on Opus; only the spawned analysis subagent runs on Haiku.
 
 ### How exactly to analyze the chat histories (concrete recipe — don't skip)
 
