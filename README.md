@@ -18,6 +18,7 @@ The cross-pass executive overview is at [`SUMMARY.md`](SUMMARY.md). Read that fi
 ```
 .
 ├── SUMMARY.md                         # cross-pass executive overview (start here)
+├── skill/SKILL.md                     # synthesized methodology that produced this corpus
 │
 ├── smoketest/                         # Pass 1: honest baseline (mcp-smoke-test)
 │   ├── scripts.json                   # 120-script catalog
