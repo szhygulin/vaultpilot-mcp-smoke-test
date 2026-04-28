@@ -27,20 +27,33 @@ python3 tools/sample_matrix_run.py init [--seed N] \
 # total progress).
 python3 tools/sample_matrix_run.py next-batch
 
-# After dispatching the batch
+# After dispatching the batch — auto-aggregates transcripts, surfaces counts
+# (by role, by defense layer, did_user_get_tricked), flags tricked SCRIPT_IDs,
+# and prints next-step instructions for the orchestrator (analysis +
+# issue-filing).
 python3 tools/sample_matrix_run.py mark-completed --batch N \
-    [--transcripts runs/matrix-sampled/batch-NN/transcripts]
+    [--transcripts <path>]      # default: runs/matrix-sampled/batch-NN/transcripts
+    [--skip-aggregate]          # skip the auto-aggregate step
+
+# Re-run the aggregate on its own (e.g. if mark-completed was called before
+# transcripts landed, or you fixed up transcripts and want to refresh)
+python3 tools/sample_matrix_run.py aggregate-batch --batch N
 
 # Anytime: see overall progress
 python3 tools/sample_matrix_run.py status [-v]
 ```
 
-The `next-batch` output is the Phase 2.5 cost preflight report — surface it to the user verbatim and wait for confirmation before dispatching.
+The `next-batch` output is the Phase 2.5 cost preflight report — surface it to the user verbatim and wait for confirmation before dispatching. The `mark-completed` output is the quick aggregate — surface the counts to the user and act on the next-step instructions (delegate analysis subagent, file issues).
 
 State files (under `runs/matrix-sampled/`):
 - `partition.json` — immutable plan; `init --force` to reshuffle from a new seed
 - `progress.json` — `pending | in_progress | completed` per batch
-- `batch-NN/scripts.json` — the cells dispatched in batch N, in the format the skill's Phase 3 dispatch consumes (one entry per cell, with role + attack inlined)
+- `batch-NN/scripts.json` — input: cells dispatched in batch N (Phase 3 format)
+- `batch-NN/transcripts/*.txt` — output of dispatch (one per cell)
+- `batch-NN/summary.txt` — auto-extracted structured records (after `mark-completed`)
+- `batch-NN/aggregate.json` — auto-extracted counts (after `mark-completed`)
+- `batch-NN/findings.md` — orchestrator's per-batch analysis (manual; see skill Phase 3.6)
+- `batch-NN/issues.md` — orchestrator's per-batch issue-filing record (manual; see skill Phase 3.7)
 
 Default partition: 50 cells/batch × 23 batches = 1110 cells. Override budget anchors via flags if your plan changes; `--batch-size` overrides the auto-derived value if you want a different fill ratio.
 
