@@ -18,7 +18,11 @@ Sampling strategy:
   - Shuffle once with a fixed seed (default 42) — deterministic, reproducible.
   - Slice into batches of N cells, where
         N = floor(SESSION_ALL_MODELS × BATCH_SESSION_FRACTION / TOKENS_PER_CELL)
-    Defaults: 5M × 0.25 / 50k = 25 cells/batch → 361 batches total for 9020 cells.
+    Defaults: 5M × 0.25 / 25k = 50 cells/batch → 181 batches total for 9020 cells.
+    (Per-cell anchor 25k = measured Haiku adversarial average; the old 50k
+    Sonnet-era anchor over-estimated per-cell cost 2x, so a 25%-of-session
+    target with realistic Haiku numbers gives the same 50 cells/batch the
+    Sonnet-era 50%-of-session target gave.)
   - Each batch is non-overlapping; cumulatively they cover every cell exactly once.
 
 Subcommands:
@@ -66,7 +70,11 @@ PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 # if these don't match what you see on https://console.anthropic.com .
 DEFAULT_ALL_MODELS_WEEKLY = 50_000_000  # placeholder; verify against dashboard
 DEFAULT_SESSION_ALL_MODELS = 5_000_000  # placeholder 5-hour rolling window cap
-DEFAULT_TOKENS_PER_CELL = 50_000        # conservative upper-bound for Haiku adversarial cell (actual batch-1 average was ~25k); quota-free
+DEFAULT_TOKENS_PER_CELL = 25_000        # measured Haiku adversarial-cell average from batch-1; quota-free
+                                        # (was 50k Sonnet-era ceiling — kept the
+                                        # old number through the Sonnet→Haiku
+                                        # switch by accident; batch-size math used
+                                        # 2x the real cost until Phase D)
 DEFAULT_ANALYSIS_TOKENS = 100_000       # one Opus analysis subagent per batch (actual batch-1: ~82k; rounded up for headroom)
 DEFAULT_BATCH_SESSION_FRACTION = 0.25   # batch fills this much of one 5-hour session
                                         # (Phase D resample: tightened from 0.5
@@ -610,7 +618,7 @@ def main() -> None:
                         help='5-hour all-models cap in tokens (default: 5M; tune to plan)')
     p_init.add_argument('--per-cell', dest='per_cell',
                         type=int, default=DEFAULT_TOKENS_PER_CELL,
-                        help='Tokens per cell estimate (default: 50k)')
+                        help='Tokens per cell estimate (default: 25k Haiku-measured)')
     p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
                         type=int, default=DEFAULT_ANALYSIS_TOKENS,
                         help='Phase 5 analysis subagent token estimate '
