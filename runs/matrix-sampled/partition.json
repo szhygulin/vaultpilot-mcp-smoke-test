@@ -1,11 +1,13 @@
 {
-  "created_at": "2026-04-28T13:16:31Z",
+  "created_at": "2026-04-28T13:33:39Z",
   "seed": 42,
   "cells_per_week": 540,
   "budget_constraint": {
     "sonnet_weekly_tokens": 30000000,
+    "all_models_weekly_tokens": 50000000,
     "budget_fraction": 0.9,
     "tokens_per_cell": 50000,
+    "analysis_tokens": 250000,
     "derived_cells_per_week": 540
   },
   "batch_size": 15,

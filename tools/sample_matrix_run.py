@@ -55,8 +55,10 @@ PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 # Defaults align with skill/SKILL.md Phase 2.5 anchors. Override via flags
 # if the user's plan / model behavior changes.
 DEFAULT_SONNET_WEEKLY = 30_000_000
+DEFAULT_ALL_MODELS_WEEKLY = 50_000_000
 DEFAULT_FRACTION = 0.9
 DEFAULT_TOKENS_PER_CELL = 50_000
+DEFAULT_ANALYSIS_TOKENS = 250_000
 DEFAULT_BATCH_SIZE = 15
 DEFAULT_SEED = 42
 
@@ -106,8 +108,10 @@ def cmd_init(args: argparse.Namespace) -> None:
         'cells_per_week': cells_per_week,
         'budget_constraint': {
             'sonnet_weekly_tokens': args.sonnet_weekly,
+            'all_models_weekly_tokens': args.all_models_weekly,
             'budget_fraction': args.fraction,
             'tokens_per_cell': args.per_cell,
+            'analysis_tokens': args.analysis_tokens,
             'derived_cells_per_week': cells_per_week,
         },
         'batch_size': args.batch_size,
@@ -136,13 +140,23 @@ def cmd_init(args: argparse.Namespace) -> None:
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
 
+    week_dispatch = cells_per_week * args.per_cell
+    week_total = week_dispatch + args.analysis_tokens
+    pct_sonnet = week_total / args.sonnet_weekly * 100
+    pct_all = week_total / args.all_models_weekly * 100
+
     print(f"wrote {PARTITION_PATH}")
-    print(f"  total cells:        {partition['total_cells']}")
-    print(f"  cells/week:         {partition['cells_per_week']}")
-    print(f"  total weeks:        {partition['total_weeks']}")
-    print(f"  estimated tokens/week: ~{cells_per_week * args.per_cell / 1e6:.1f}M")
-    print(f"  batch size:         {partition['batch_size']}")
-    print(f"  seed:               {partition['seed']}")
+    print(f"  total cells:           {partition['total_cells']}")
+    print(f"  cells/week:            {partition['cells_per_week']}")
+    print(f"  total weeks:           {partition['total_weeks']}")
+    print(f"  est. tokens/week:      ~{week_total / 1e6:.1f}M "
+          f"(~{week_dispatch / 1e6:.1f}M dispatch + ~{args.analysis_tokens / 1e6:.2f}M analysis)")
+    print(f"  Sonnet weekly anchor:  ~{args.sonnet_weekly / 1e6:.0f}M  "
+          f"→ each week ≈ {pct_sonnet:.0f}% of bucket")
+    print(f"  All-models anchor:     ~{args.all_models_weekly / 1e6:.0f}M  "
+          f"→ each week ≈ {pct_all:.0f}% of bucket")
+    print(f"  batch size:            {partition['batch_size']}")
+    print(f"  seed:                  {partition['seed']}")
 
 
 def cmd_next_week(args: argparse.Namespace) -> None:
@@ -216,16 +230,43 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     for c in hydrated:
         matrix_counts[c['matrix']] += 1
         role_counts[c['role']] += 1
-    est_tokens = len(hydrated) * partition['budget_constraint']['tokens_per_cell']
+
+    bc = partition['budget_constraint']
+    per_cell = bc['tokens_per_cell']
+    analysis_tokens = bc.get('analysis_tokens', DEFAULT_ANALYSIS_TOKENS)
+    sonnet_weekly = bc['sonnet_weekly_tokens']
+    all_models_weekly = bc.get('all_models_weekly_tokens', DEFAULT_ALL_MODELS_WEEKLY)
+
+    dispatch_tokens = len(hydrated) * per_cell
+    total_tokens = dispatch_tokens + analysis_tokens
+    pct_sonnet = total_tokens / sonnet_weekly * 100
+    pct_all = total_tokens / all_models_weekly * 100
 
     print(f"wrote {scripts_path}")
-    print(f"  cells:              {len(hydrated)}")
-    print(f"  by matrix:          {matrix_counts}")
-    print(f"  by role:            {role_counts}")
-    print(f"  recommended batch:  {partition['batch_size']}")
-    print(f"  est. dispatch cost: ~{est_tokens / 1e6:.1f}M tokens")
-    print(f"  next: dispatch via skill/SKILL.md Phase 3, "
-          f"then `mark-completed --week {week_n}`")
+    print()
+    print(f"=== Phase 2.5 cost preflight (week {week_n}) ===")
+    print(f"About to dispatch {len(hydrated)} subagents on Sonnet "
+          f"(matrix-sampled adversarial run).")
+    print()
+    print(f"By matrix:  {matrix_counts}")
+    print(f"By role:    {role_counts}")
+    print(f"Batch size: {partition['batch_size']} concurrent / batch")
+    print()
+    print(f"Estimated total token cost: ~{total_tokens / 1e6:.1f}M tokens "
+          f"(~{dispatch_tokens / 1e6:.1f}M dispatch + ~{analysis_tokens / 1e6:.2f}M analysis)")
+    print()
+    print(f"Ballpark vs Max x20 weekly tiers:")
+    print(f"  Sonnet-only bucket: ~{pct_sonnet:.0f}% of weekly "
+          f"(anchor ~{sonnet_weekly / 1e6:.0f}M)")
+    print(f"  All-models bucket:  ~{pct_all:.0f}% of weekly "
+          f"(anchor ~{all_models_weekly / 1e6:.0f}M)")
+    print()
+    print(f"These are rough estimates — verify on your account dashboard "
+          f"for exact numbers.")
+    print()
+    print(f"Next: orchestrator should ask the user to confirm before "
+          f"dispatching, then run Phase 3 over {scripts_path} "
+          f"and `mark-completed --week {week_n}` when done.")
 
 
 def cmd_mark_completed(args: argparse.Namespace) -> None:
@@ -275,6 +316,12 @@ def main() -> None:
     p_init.add_argument('--sonnet-weekly', dest='sonnet_weekly',
                         type=int, default=DEFAULT_SONNET_WEEKLY,
                         help='Sonnet weekly budget in tokens (default: 30M)')
+    p_init.add_argument('--all-models-weekly', dest='all_models_weekly',
+                        type=int, default=DEFAULT_ALL_MODELS_WEEKLY,
+                        help='All-models weekly budget in tokens (default: 50M)')
+    p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
+                        type=int, default=DEFAULT_ANALYSIS_TOKENS,
+                        help='Phase 5 analysis subagent token estimate (default: 250k)')
     p_init.add_argument('--fraction', type=float, default=DEFAULT_FRACTION,
                         help='Fraction of weekly budget to use (default: 0.9)')
     p_init.add_argument('--per-cell', dest='per_cell',

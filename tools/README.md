@@ -18,10 +18,13 @@ A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, which exceeds
 ```bash
 # One-time: build the partition + progress files (already done if committed)
 python3 tools/sample_matrix_run.py init [--seed N] \
-    [--sonnet-weekly 30000000] [--fraction 0.9] \
-    [--per-cell 50000] [--batch-size 15]
+    [--sonnet-weekly 30000000] [--all-models-weekly 50000000] \
+    [--fraction 0.9] [--per-cell 50000] [--analysis-tokens 250000] \
+    [--batch-size 15]
 
 # Each week: get the next pending sample, writes runs/matrix-sampled/week-NN/scripts.json
+# AND prints the Phase-2.5-shaped cost preflight report (Sonnet bucket %,
+# all-models bucket %, dispatch + analysis token estimates).
 python3 tools/sample_matrix_run.py next-week
 
 # After dispatching + analyzing the week's run
@@ -31,6 +34,8 @@ python3 tools/sample_matrix_run.py mark-completed --week N \
 # Anytime: see overall progress
 python3 tools/sample_matrix_run.py status
 ```
+
+The `next-week` output is the Phase 2.5 cost preflight report — surface it to the user verbatim and wait for confirmation before dispatching.
 
 State files (under `runs/matrix-sampled/`):
 - `partition.json` — immutable plan; `init --force` to reshuffle from a new seed
