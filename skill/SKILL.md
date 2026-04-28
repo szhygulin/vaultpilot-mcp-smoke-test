@@ -46,6 +46,16 @@ Before generating scripts, capture:
 
 If the MCP has a real-funds / signing surface, **always run in demo / sandbox mode**. Never broadcast real transactions during a smoke test.
 
+### Auto-enable demo mode when the MCP supports it
+
+If the target MCP exposes an in-session demo toggle (e.g. `vaultpilot-mcp`'s `set_demo_wallet` / `VAULTPILOT_DEMO=true` env var), the orchestrator must:
+
+1. **Probe the current state** before Phase 3 dispatch — call the MCP's status tool (`get_demo_wallet`, `get_vaultpilot_config_status`, or equivalent) and check whether demo / sandbox mode is active.
+2. **If demo is OFF, auto-enable it** rather than asking the user every time. Pick a persona that maximizes coverage for the planned scripts (for `vaultpilot-mcp`, `defi-degen` covers EVM + Solana + TRON DeFi flows). Surface what was enabled and why, then proceed.
+3. **If the MCP has no demo toggle** but has a real-funds surface, refuse to dispatch and propose narrowing to read-only scripts only (or have the user enable demo through whatever means the MCP supports — e.g. restart with env var).
+
+Auto-enabling is the right default because the user has already opted into smoke testing this MCP — having to confirm demo mode each batch is busywork. The orchestrator should still **report** what it did ("activated demo persona X for this session") so the action is visible. If the user prefers a different persona or wants to opt out, they can override before the next `next-batch`.
+
 ---
 
 ## Phase 2 — Generate the script catalog
