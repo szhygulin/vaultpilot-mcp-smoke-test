@@ -21,16 +21,17 @@ Comprehensive end-user simulation of any MCP server. Same 6-phase pipeline, two 
 
 ---
 
-## Pipeline (6 phases)
+## Pipeline (6 phases + cost gate)
 
 1. **Catalog** the target MCP's tool surface
 2. **Generate** 100–200 test scripts spanning the realistic use-case space
+2.5. **Cost preflight** — estimate tokens vs Max-x20 weekly tiers, ask user to confirm before dispatching
 3. **Spawn** one subagent per script in background batches
 4. **Concatenate** transcripts into a single corpus
 5. **Analyze** via a fresh subagent → `findings.md`
 6. **File** GitHub issues for each distinct finding, plus a tracker
 
-Phases 1, 4, 6 are mode-independent. Phase 2 (script catalog), Phase 3 (subagent prompt), and Phase 5 (analysis lens) branch by mode.
+Phases 1, 4, 6 are mode-independent. Phase 2 (script catalog), Phase 3 (subagent prompt), and Phase 5 (analysis lens) branch by mode. Phase 2.5 is mandatory regardless of mode — never dispatch without explicit user confirmation of the cost estimate.
 
 ---
 
@@ -100,6 +101,62 @@ For crypto MCPs, label 4 personas (Alice/Bob/Carol/Dave) onto demo wallets so sc
 
 ---
 
+## Phase 2.5 — Cost preflight (mandatory)
+
+**Before any Phase 3 dispatch, surface a budget estimate and explicitly ask the user to confirm.** Do not start the run as soon as the user names parameters — even when the request is unambiguous (e.g. "run adversarial on `expert-matrix.json` in batches of 10"). Smoke tests routinely consume a meaningful chunk of weekly Sonnet quota; the user should opt in with eyes open.
+
+### What to compute
+
+Inputs from the chosen run plan:
+- `N_subagents` = scripts in catalog × roles dispatched per script (1 for honest / sparse; 3 for matrix files).
+- `mode` = honest | adversarial.
+- `analysis_subagent` = always 1 fresh subagent for Phase 5.
+
+Per-subagent token anchors (Sonnet, 8-tool-call cap):
+- Honest mode: ~25–35k input + ~5k output ≈ **~35k total**.
+- Adversarial mode (role-play overhead): ~30–50k input + ~5k output ≈ **~50k total**.
+- Phase 5 analysis subagent: ~150–250k input (full `summary.txt`) + ~5–10k output ≈ **~250k total**.
+
+Total run cost ≈ `N_subagents × per-subagent` + `analysis_subagent`.
+
+Worked example — adversarial run on `expert-matrix.json` (450 cells):
+- 450 × 50k = ~22.5M tokens for dispatch
+- + ~250k for analysis
+- ≈ **~23M tokens** total
+
+### Ballpark against Max x20 weekly tiers
+
+Max x20 has two relevant weekly buckets that this run consumes:
+- **Sonnet-only weekly bucket**: ballpark **~25–35M tokens/week** (this is where the dispatched subagents land — they're pinned to Sonnet).
+- **All-models weekly bucket** (cross-model, includes Opus orchestrator + Sonnet subagents + any Haiku/other usage): ballpark **~40–60M tokens/week**.
+
+These anchors are approximate — Anthropic's plan structure evolves; verify against the user's account dashboard for exact current numbers if it matters. The skill's job is **order-of-magnitude awareness**, not authoritative billing.
+
+### Report format
+
+Surface this estimate to the user before dispatching, in roughly this shape:
+
+> About to dispatch N_subagents subagents on Sonnet for `<vector-file>` (mode: `<honest|adversarial>`).
+>
+> **Estimated total token cost:** ~T_total tokens (~T_dispatch dispatch + ~T_analysis analysis).
+>
+> **Ballpark vs Max x20 weekly tiers:**
+> - Sonnet-only bucket: **~X%** of the weekly allowance (≈ T_total / 30M).
+> - All-models bucket:  **~Y%** of the weekly allowance (≈ T_total / 50M).
+>
+> These are rough estimates — verify on your account dashboard for exact numbers. Proceed?
+
+### When to recompute
+
+Recompute and re-prompt if the user changes any of:
+- Vector file (sparse → matrix can 4–6× the cost).
+- Mode (honest vs adversarial).
+- Whether to also run the Phase 5 analysis subagent in the same session.
+
+If the user accepts: proceed to Phase 3. If the user wants to scale down (e.g. "use the sparse vector instead", "skip half the categories"), recompute the estimate against the new plan and re-prompt before dispatching.
+
+---
+
 ## Phase 3 — Run subagents
 
 Workdir layout:
@@ -111,7 +168,7 @@ Workdir layout:
 └── (later) all_transcripts.txt, summary.txt, findings.md
 ```
 
-Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "haiku"`. The orchestrator running this skill stays on its default model (Opus); only the spawned subagents run on Haiku — they're doing high-volume, well-scoped simulation work where Haiku is sufficient and the cost difference at 120+ subagents is material.
+Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "sonnet"`. The orchestrator running this skill stays on its default model (Opus); only the spawned subagents run on Sonnet — they're doing high-volume role-play of threat-model scenarios where the extra reasoning headroom over Haiku materially changes whether subtle attacks (homoglyph, approval-cloak, chain-swap) land convincingly enough to test the defense. The cost premium is accepted for this skill specifically; on Max x20 plans Sonnet usage is billed separately while Haiku is included, so this is a deliberate quality-over-cost choice for adversarial smoke testing.
 
 **Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. Historically 10/batch has been a reasonable default, but don't treat it as fixed — go larger when the MCP is fast and rate limits are healthy, smaller when batches are throwing rate-limit errors or when you want to inspect early results before fanning out further.
 
@@ -213,7 +270,7 @@ Optionally produce a structured per-script summary with a small Python script ex
 
 ## Phase 5 — Analyze
 
-Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "haiku"`. As in Phase 3, the orchestrator stays on Opus; only the spawned analysis subagent runs on Haiku.
+Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "sonnet"`. As in Phase 3, the orchestrator stays on Opus; only the spawned analysis subagent runs on Sonnet — analysis quality matters here (the corpus is large, the patterns are subtle), and the same Max-x20 billing rationale from Phase 3 applies.
 
 ### How exactly to analyze the chat histories (concrete recipe — don't skip)
 
@@ -516,7 +573,7 @@ User honest, agent honest, MCP honest. Establishes that the adversarial roles ar
 - **Coordinated disclosure.** Before publishing security findings publicly, give the maintainer reasonable time to remediate (90 days is industry standard).
 - **No real-world phishing.** Simulated "attacker addresses" must be inert (precompiles, burn addresses, demo personas, randomly-generated junk).
 - **Subagent permissions.** Tool prompts may auto-deny in subagents. Report once as meta-finding; don't re-issue scripts to chase them.
-- **Token cost.** 120 subagents × ~30k tokens ≈ 3.6M tokens per run. Confirm budget before starting if uncertain.
+- **Token cost.** Honest mode ≈ 120 × 35k ≈ 4M tokens. Adversarial sparse ≈ similar. Adversarial matrix ≈ 450 × 50k ≈ 23M tokens (expert) or 660 × 50k ≈ 33M tokens (newcomer). Always run the Phase 2.5 cost preflight gate before dispatching — never silently start a multi-million-token run.
 - **Issue volume.** 15-25 well-scoped issues is the sweet spot per run. Fewer than 10 means under-analysis; more than 30 means noise. Group related gaps when natural.
 - **Don't file harness-permission-denial issues** as MCP bugs — Claude Code subagent quirk, not an MCP problem.
 - **Save findings.md to the workdir even if you can't file issues.** The user can file manually.
