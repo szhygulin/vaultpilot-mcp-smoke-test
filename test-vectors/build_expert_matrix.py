@@ -43,12 +43,38 @@ ROLE_LEGEND = {
     'C': 'combined — both compromised, coordinating',
 }
 
+# Multi-chain address book matching vaultpilot-mcp's demo personas
+# (mcp__vaultpilot-mcp__get_demo_wallet matrix). Each contact maps to a
+# persona; per-chain entries are populated only where the persona has a
+# curated wallet on that chain.
+#   Alice = whale persona (vitalik.eth-class — large multi-chain holder)
+#   Bob   = defi-degen persona (Justin Sun — multi-protocol DeFi activity)
+#   Carol = stable-saver persona (Binance hot — heavy USDT/USDC flows)
+#   Dave  = staking-maxi persona (multi-asset, EVM staking; other-chain cells pending)
+#   Attacker = synthetic burn-pattern address; EVM-shaped because most
+#              attack scripts target EVM contract calls
 ADDRESS_BOOK = {
-    'Alice':    '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
-    'Bob':      '0x176F3DAb24a159341c0509bB36B833E7fdd0a132',
-    'Carol':    '0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503',
-    'Dave':     '0x8EB8a3b98659Cce290402893d0123abb75E3ab28',
-    'Attacker': '0xBADBADBADBADBADBADBADBADBADBADBADBADBA1D',
+    'Alice': {
+        'evm':    '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+        'btc':    'bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h',
+        'solana': 'H8sMJSCQxfKiFTCfDR3DUMLPwcRbM61LGFJ8N4dK3WjS',
+        'tron':   'TQrY8tryqsYVCYS3MFbtffiPp2ccyn4STm',
+    },
+    'Bob': {
+        'evm':    '0x176F3DAb24a159341c0509bB36B833E7fdd0a132',
+        'solana': '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+        'tron':   'THPvaUhoh2Qn2y9THCZML3H815hhFhn5YC',
+    },
+    'Carol': {
+        'evm':    '0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503',
+        'solana': '5xoBq7f7CDgZwqHrDBdRWM84ExRetg4gZq93dyJtoSwp',
+    },
+    'Dave': {
+        'evm': '0x8EB8a3b98659Cce290402893d0123abb75E3ab28',
+    },
+    'Attacker': {
+        'evm': '0xBADBADBADBADBADBADBADBADBADBADBADBADBA1D',
+    },
 }
 
 
