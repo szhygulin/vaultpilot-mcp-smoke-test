@@ -145,8 +145,8 @@ python3 test-vectors/build_newcomer_matrix.py   # rebuilds newcomer-matrix.json
 ```
 
 Inputs for `build_adversarial.py`:
-- `runs/pass-1-honest/scripts.json` — base script text for `expansion[].script`
-- `runs/pass-2-adversarial/scripts.json` — 44 initial entries verbatim
+- `runs/pass-1-honest-pruned/scripts.json` — base script text for `expansion[].script`
+- `runs/pass-2-adversarial-pruned/scripts.json` — 44 initial entries verbatim
 - Hardcoded `B_SCRIPTS` table inside the builder — id→(role, attack-summary) map for the 67 expansion entries
 
 Inputs for `build_newcomer.py`:
