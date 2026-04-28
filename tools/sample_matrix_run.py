@@ -216,13 +216,6 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
             'script': row['script'],
             'attack': row['cells'][c['role']],
         }
-        # Surface Role A subtype to dispatched subagents so they can simulate
-        # the right injection class (A.1 bytes / A.2 selection / A.3 set-level
-        # / A.4 prompt-context confusion / A.5 advisory-only — see issue #21).
-        # For C cells, A.5 means the agent half is advisory-only; passing the
-        # subtype lets the subagent shape the rogue-agent half coherently.
-        if c['role'] in ('A', 'C') and row.get('role_A_subtype'):
-            cell['role_A_subtype'] = row['role_A_subtype']
         hydrated.append(cell)
 
     batch_dir = f'{SAMPLE_DIR}/batch-{batch_n:02d}'
@@ -249,14 +242,12 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
         json.dump(progress, f, indent=2)
 
     audience_counts = {'expert': 0, 'newcomer': 0}
-    role_counts = {}
-    a_subtype_counts = {}
+    role_counts: dict[str, int] = {}
     for c in hydrated:
         audience_counts[c['audience']] = audience_counts.get(c['audience'], 0) + 1
         role_counts[c['role']] = role_counts.get(c['role'], 0) + 1
-        if c['role'] == 'A' and c.get('role_A_subtype'):
-            sub = c['role_A_subtype']
-            a_subtype_counts[sub] = a_subtype_counts.get(sub, 0) + 1
+    out_of_scope = role_counts.get('A.5', 0) + role_counts.get('C.5', 0)
+    control = role_counts.get('E', 0)
 
     bc = partition['budget_constraint']
     per_cell = bc['tokens_per_cell']
@@ -278,16 +269,15 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     role_summary = ', '.join(f"{r}: {n}" for r, n in sorted(role_counts.items()))
     print(f"Sample:     {len(hydrated)} cells "
           f"(expert: {audience_counts.get('expert', 0)}, "
-          f"newcomer: {audience_counts.get('newcomer', 0)}; {role_summary})")
-    if a_subtype_counts:
-        sub_summary = ', '.join(f"{s}: {n}"
-                                for s, n in sorted(a_subtype_counts.items()))
-        a5_n = a_subtype_counts.get('A.5', 0)
-        a_total = sum(a_subtype_counts.values())
-        a5_note = (f" — {a5_n} A.5 cells are advisory-only (OUT OF SCOPE for "
-                   f"MCP/skill filing per issue #21; route to upstream-escalation "
-                   f"§7 in analysis)") if a5_n else ""
-        print(f"            Role-A subtypes: {sub_summary} (of {a_total}){a5_note}")
+          f"newcomer: {audience_counts.get('newcomer', 0)})")
+    print(f"            roles: {role_summary}")
+    if out_of_scope:
+        print(f"            ⚠ {out_of_scope} A.5/C.5 cells are advisory-only — "
+              f"OUT OF SCOPE for MCP/skill filing (issue #21); analysis routes "
+              f"to upstream-escalation §7 (chat-client filter / model safety).")
+    if control:
+        print(f"            ℹ {control} E cells are control (everyone honest); "
+              f"any defense_layer firing on these is a false-positive finding.")
     print(f"Throughput: ~{dispatch_throughput / 1e6:.2f}M Haiku tokens "
           f"(dispatch — quota-free)")
     print(f"            ~{analysis_tokens / 1e6:.2f}M Opus tokens "
@@ -312,8 +302,13 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
 # Phase 3 transcript template) to emit fields in these exact forms; the
 # parser falls back gracefully when they don't, but stable Counter buckets
 # require canonical inputs.
-_CANONICAL_ROLES = {'A', 'B', 'C', 'D', 'E', 'F'}
-_CANONICAL_A_SUBTYPES = {'A.1', 'A.2', 'A.3', 'A.4', 'A.5'}
+_CANONICAL_ROLES = {
+    'A.1', 'A.2', 'A.3', 'A.4', 'A.5',
+    'B',
+    'C.1', 'C.2', 'C.3', 'C.4', 'C.5',
+    'D', 'E', 'F',
+}
+_CANONICAL_A5_ATTRIB = {'injection-shaped', 'model-shaped', 'n/a'}
 _CANONICAL_TRICKED = {'yes', 'no', 'n/a'}
 _CANONICAL_DEFENSE_TOKENS = {
     'invariant-1', 'invariant-2', 'invariant-3', 'invariant-4',
@@ -324,25 +319,35 @@ _CANONICAL_DEFENSE_TOKENS = {
 
 
 def _canonicalize_role(raw: str) -> str:
-    """'A', 'A (rogue agent)', 'a' → 'A'. Anything else → 'unknown'."""
+    """'A.1' / 'a.5 (advisory)' / 'C.3' / 'B (rogue MCP)' / 'F' → canonical
+    14-role token. Subtype tokens (A.x, C.x) take precedence over single-letter
+    matches. Returns 'unknown' for anything that doesn't fit."""
     if not raw:
         return 'unknown'
-    m = re.match(r'^\s*([A-Ea-e])\b', raw)
+    s = raw.strip()
+    m = re.match(r'^\s*([AC])\.?\s*([1-5])\b', s, re.I)
+    if m:
+        return f"{m.group(1).upper()}.{m.group(2)}"
+    m = re.match(r'^\s*([BDEF])\b', s, re.I)
     if m:
         return m.group(1).upper()
+    # Bare 'A' or 'C' without a subtype number is ambiguous post-reframe;
+    # bucket as 'unknown' so the analysis subagent surfaces the format issue.
+    if re.match(r'^\s*[AC]\b', s, re.I):
+        return 'unknown'
     return 'unknown'
 
 
-def _canonicalize_a_subtype(raw: str) -> str:
-    """'A.1', 'a.5 (advisory)', 'A1', 'subtype: A.4' → 'A.1'/'A.5'/'A.1'/'A.4'.
-    Falls back to 'unknown' (note: 'unknown' is the right bucket for non-A
-    rows; callers can filter)."""
+def _canonicalize_a5_attribution(raw: str) -> str:
+    """'injection-shaped' / 'model-shaped' / 'n/a' / variants → canonical."""
     if not raw:
         return 'unknown'
-    m = re.search(r'A\.?\s*([1-5])', raw, re.I)
-    if m:
-        return f'A.{m.group(1)}'
-    if re.match(r'^\s*n/?a\b', raw, re.I):
+    s = raw.strip().lower()
+    if 'injection' in s:
+        return 'injection-shaped'
+    if 'model' in s or 'hallucin' in s or 'stale' in s or 'sycoph' in s:
+        return 'model-shaped'
+    if re.match(r'^\s*n/?a\b', s):
         return 'n/a'
     return 'unknown'
 
@@ -423,17 +428,17 @@ def _parse_transcripts(transcripts_dir: str) -> list[dict]:
         m_def = re.search(r'defense[_ ]layer[_a-z ]*:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         m_tricked = re.search(r'did[_ ]user[_ ]get[_ ]tricked:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         m_attempt = re.search(r'attack[_ ]attempted:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
-        m_subtype = re.search(r'a[_ ]?subtype:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
+        m_a5 = re.search(r'a5[_ ]?attribution:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         rec['defense_layer_raw'] = m_def.group(1).strip() if m_def else ''
         rec['did_user_get_tricked_raw'] = m_tricked.group(1).strip() if m_tricked else ''
         rec['attack_attempted'] = m_attempt.group(1).strip() if m_attempt else ''
-        rec['a_subtype_raw'] = m_subtype.group(1).strip() if m_subtype else ''
+        rec['a5_attribution_raw'] = m_a5.group(1).strip() if m_a5 else ''
 
         # Canonicalize for stable aggregation.
         rec['role'] = _canonicalize_role(rec.get('role', ''))
         rec['defense_layer'] = _canonicalize_defense_layer(rec['defense_layer_raw'])
         rec['did_user_get_tricked'] = _canonicalize_tricked(rec['did_user_get_tricked_raw'])
-        rec['a_subtype'] = _canonicalize_a_subtype(rec['a_subtype_raw'])
+        rec['a5_attribution'] = _canonicalize_a5_attribution(rec['a5_attribution_raw'])
         records.append(rec)
     return records
 
@@ -475,8 +480,13 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
     by_layer = Counter(r['defense_layer'] for r in records)
     by_tricked = Counter(r['did_user_get_tricked'] for r in records)
     by_role = Counter(r.get('role', '?') for r in records)
-    # Role-A subtypes only count among role=A records (per issue #21).
-    by_a_subtype = Counter(r['a_subtype'] for r in records if r.get('role') == 'A')
+    # A.5/C.5 attribution split (only meaningful for those rows; per issue #21).
+    by_a5_attribution = Counter(r['a5_attribution'] for r in records
+                                if r.get('role') in ('A.5', 'C.5'))
+    # E rows where any defense fired = false-positive findings.
+    e_firings = [r for r in records
+                 if r.get('role') == 'E'
+                 and r['defense_layer'] not in ('none', 'other', 'unknown')]
     tricked = by_tricked.get('yes', 0)
 
     aggregate = {
@@ -485,7 +495,10 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
         'by_defense_layer': dict(by_layer),
         'by_did_user_get_tricked': dict(by_tricked),
         'by_role': dict(by_role),
-        'by_a_subtype': dict(by_a_subtype),
+        'by_a5_attribution': dict(by_a5_attribution),
+        'e_false_positive_count': len(e_firings),
+        'e_false_positive_script_ids': [r.get('script_id', r['file'].replace('.txt', ''))
+                                        for r in e_firings],
         'tricked_count': tricked,
         'tricked_script_ids': [r.get('script_id', r['file'].replace('.txt', ''))
                                for r in records
@@ -500,10 +513,15 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
         print(f"  wrote {aggregate_path}")
         print(f"  transcripts:          {len(records)}")
         print(f"  by role:              {dict(by_role)}")
-        if by_a_subtype:
-            print(f"  by A subtype (A=only):{dict(by_a_subtype)}")
+        if by_a5_attribution:
+            print(f"  A.5/C.5 attribution:  {dict(by_a5_attribution)}")
         print(f"  by defense layer:     {dict(by_layer)}")
         print(f"  did_user_get_tricked: {dict(by_tricked)}")
+        if e_firings:
+            print(f"  ⚠ {len(e_firings)} E (control) rows triggered a defense — "
+                  f"false-positive signal: "
+                  f"{aggregate['e_false_positive_script_ids'][:5]}"
+                  f"{'...' if len(e_firings) > 5 else ''}")
         if tricked:
             print(f"  ⚠ {tricked} transcripts where user got tricked: "
                   f"{aggregate['tricked_script_ids'][:5]}"
