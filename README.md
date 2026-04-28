@@ -128,26 +128,46 @@ For protection rules matching this repo, see `gh api -X PUT repos/.../branches/m
 ```
 .
 ├── SUMMARY.md                         # cross-pass executive overview (start here)
-├── skill/SKILL.md                     # synthesized methodology that produced this corpus
+├── README.md                          # this file
 │
-├── smoketest/                         # Pass 1: honest baseline (mcp-smoke-test)
-│   ├── scripts.json                   # 120-script catalog
-│   ├── transcripts/NNN.txt            # 120 individual transcripts
-│   ├── all_transcripts.txt            # concatenated corpus (568 KB)
-│   ├── summary.txt                    # per-script structured extract
-│   └── findings.md                    # full Pass-1 analysis (UX, feature gaps, security)
+├── skill/                             # methodology
+│   └── SKILL.md                       # synthesized 6-phase pipeline; honest + adversarial modes
 │
-└── smoketest-adversarial/             # Pass 2: red-team (crypto-security-smoke-test)
-    ├── scripts.json                   # 44-script initial adversarial catalog (with role tags)
-    ├── enrichment.json                # 30 security-enriched scripts (121-150)
-    ├── scripts-base.json              # copy of Pass-1 scripts.json for reference
-    ├── transcripts/                   # 111 adversarial transcripts (44 initial + 67 b-prefixed expansion)
-    ├── all_transcripts.txt            # initial 44-script concat
-    ├── all_transcripts_full.txt       # full 111-script concat (1.8 MB)
-    ├── summary.txt                    # initial structured extract
-    ├── summary_full.txt               # full structured extract (103 KB)
-    ├── findings_adversarial.md        # initial 44-script analysis
-    └── findings_adversarial_full.md   # full 111-script analysis (latest)
+├── tools/                             # helper scripts shelled out to between subagent dispatches
+│   ├── concat_transcripts.sh          # Phase 4: transcripts/*.txt → all_transcripts.txt
+│   ├── parse_summary.py               # Phase 5.2 honest mode: extract per-script summary
+│   ├── parse_summary_adversarial.py   # Phase 5.2 adversarial mode: + [ADVERSARIAL_RESULT]
+│   ├── find_missing_transcripts.sh    # Phase 3: surface in-flight subagents
+│   ├── wait_for_transcripts.sh        # Phase 3/4 transition: block until N transcripts present
+│   └── README.md                      # tool inventory
+│
+├── test-vectors/                      # reusable script catalogs
+│   ├── honest-baseline.json           # 120 expert-style scripts
+│   ├── adversarial.json               # 111 expert + adversarial overlay
+│   ├── newcomer-adversarial.json      # 220 newcomer-search-term scripts + adversarial overlay
+│   ├── build_adversarial.py
+│   ├── build_newcomer.py
+│   └── README.md
+│
+└── runs/                              # frozen test results — one subdir per pass
+    ├── pass-1-honest/                 # Pass 1: honest baseline
+    │   ├── scripts.json               # 120-script catalog
+    │   ├── transcripts/NNN.txt        # 120 individual transcripts
+    │   ├── all_transcripts.txt        # concatenated corpus
+    │   ├── summary.txt                # per-script structured extract
+    │   └── findings.md                # full analysis
+    │
+    └── pass-2-adversarial/            # Pass 2: red-team
+        ├── scripts.json               # 44-script initial adversarial catalog (with role tags)
+        ├── enrichment.json            # 30 security-enriched scripts (121-150)
+        ├── scripts-base.json          # copy of Pass-1 scripts.json for reference
+        ├── transcripts/               # 111 adversarial transcripts (44 initial + 67 b-prefixed)
+        ├── all_transcripts.txt        # initial 44-script concat
+        ├── all_transcripts_full.txt   # full 111-script concat (1.8 MB)
+        ├── summary.txt                # initial structured extract
+        ├── summary_full.txt           # full structured extract (103 KB)
+        ├── findings_adversarial.md    # initial 44-script analysis
+        └── findings_adversarial_full.md  # full 111-script analysis (latest)
 ```
 
 ## Coverage at a glance
