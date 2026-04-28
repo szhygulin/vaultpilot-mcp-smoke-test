@@ -125,38 +125,44 @@ Inputs from the chosen run plan:
 - `mode` = honest | adversarial.
 - `analysis_subagent` = always 1 fresh subagent for Phase 5.
 
-Per-subagent token anchors (Sonnet, 8-tool-call cap):
-- Honest mode: ~25–35k input + ~5k output ≈ **~35k total**.
-- Adversarial mode (role-play overhead): ~30–50k input + ~5k output ≈ **~50k total**.
-- Phase 5 analysis subagent: ~150–250k input (full `summary.txt`) + ~5–10k output ≈ **~250k total**.
+Per-subagent token anchors (8-tool-call cap):
+- Honest mode (Haiku per-cell): ~25–35k input + ~5k output ≈ **~35k total**.
+- Adversarial mode (Haiku per-cell, role-play overhead): ~20–35k input + ~5k output ≈ **~25–30k total** (batch-1 measured average; the 50k upper-bound used in tooling is conservative).
+- Phase 5 analysis subagent (Opus): ~70–100k input (full `summary.txt`) + ~5–10k output ≈ **~80–100k total** (batch-1 measured ~82k).
 
-Total run cost ≈ `N_subagents × per-subagent` + `analysis_subagent`.
+Quota-relevant total ≈ `analysis_subagent` only (per-cell dispatch on Haiku doesn't deplete weekly buckets on Max x20).
 
-Worked example — adversarial run on `expert-matrix.json` (450 cells):
-- 450 × 50k = ~22.5M tokens for dispatch
-- + ~250k for analysis
-- ≈ **~23M tokens** total
+Worked example — adversarial run on `expert-matrix.json` (450 cells, 9 batches at 50/batch):
+- 450 × ~25k = ~11M Haiku tokens for dispatch *(quota-free)*
+- + 9 × ~100k Opus tokens for analysis *(counts toward all-models weekly)*
+- → **~900k tokens** of weekly-bucket spend across the whole 450-cell run; ~11M of total compute throughput.
 
 ### Ballpark against Max x20 weekly tiers
 
-Max x20 has three relevant weekly buckets that this run consumes:
-- **Sonnet-only weekly bucket**: ballpark **~25–35M tokens/week** (where dispatched per-cell subagents land — pinned to Sonnet per Phase 3).
-- **Opus weekly bucket**: ballpark **~8–12M tokens/week** (where the Phase 5 analysis subagent lands — pinned to Opus per Phase 5 step 5.3, plus orchestrator overhead since the orchestrator runs on Opus by default). Smallest bucket; binding constraint for analysis-heavy runs.
-- **All-models weekly bucket** (cross-model, includes Opus orchestrator + Sonnet subagents + Opus analyses + any Haiku/other usage): ballpark **~40–60M tokens/week**.
+Max x20 (verified from the user's dashboard) exposes essentially **one quota counter** for paid-tier usage: an all-models weekly bucket plus a per-session 5-hour rolling window. There is **no separate Sonnet or Opus counter** — both depleted the all-models bucket. Haiku is the included tier and doesn't deplete any visible bucket.
 
-These anchors are approximate — Anthropic's plan structure evolves; verify against the user's account dashboard for exact current numbers if it matters. The skill's job is **order-of-magnitude awareness**, not authoritative billing.
+- **All-models weekly bucket**: placeholder anchor **~40–60M tokens/week**. The user's account dashboard is ground truth — override the tool's anchor (`--all-models-weekly`) if this number is materially different.
+- **All-models 5-hour rolling window**: placeholder anchor **~5M tokens**. Same caveat — verify against dashboard.
+
+Per-cell dispatch runs on Haiku (per Phase 3) and depletes neither. Only the orchestrator's Opus turns + the Phase 5 analysis subagent count.
+
+These anchors are placeholder estimates. The skill's job is **order-of-magnitude awareness**, not authoritative billing.
 
 ### Report format
 
 Surface this estimate to the user before dispatching, in roughly this shape:
 
-> About to dispatch N_subagents subagents on Sonnet for `<vector-file>` (mode: `<honest|adversarial>`).
+> About to dispatch N_subagents subagents on Haiku for `<vector-file>` (mode: `<honest|adversarial>`).
 >
-> **Estimated total token cost:** ~T_total tokens (~T_dispatch dispatch + ~T_analysis analysis).
+> **Estimated token cost:**
+>   - Dispatch (Haiku, doesn't deplete weekly buckets): ~T_dispatch tokens.
+>   - Phase 5 analysis subagent (Opus): ~T_analysis tokens.
 >
-> **Ballpark vs Max x20 weekly tiers:**
-> - Sonnet-only bucket: **~X%** of the weekly allowance (≈ T_total / 30M).
-> - All-models bucket:  **~Y%** of the weekly allowance (≈ T_total / 50M).
+> **Ballpark vs Max x20 caps (analysis subagent — only quota-relevant cost):**
+> - All-models weekly:  **~Y%** of weekly allowance (≈ T_analysis / 50M placeholder).
+> - All-models session: **~Z%** of 5-hour window (≈ T_analysis / 5M placeholder).
+>
+> Anchors are placeholders — verify against the dashboard if accuracy matters.
 >
 > These are rough estimates — verify on your account dashboard for exact numbers. Proceed?
 
@@ -222,7 +228,7 @@ Workdir layout:
 └── (later) all_transcripts.txt, summary.txt, findings.md
 ```
 
-Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "sonnet"`. The orchestrator running this skill stays on its default model (Opus); only the spawned subagents run on Sonnet — they're doing high-volume role-play of threat-model scenarios where the extra reasoning headroom over Haiku materially changes whether subtle attacks (homoglyph, approval-cloak, chain-swap) land convincingly enough to test the defense. The cost premium is accepted for this skill specifically; on Max x20 plans Sonnet usage is billed separately while Haiku is included, so this is a deliberate quality-over-cost choice for adversarial smoke testing.
+Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "haiku"`. The orchestrator running this skill stays on its default model (Opus); only the spawned per-cell subagents run on Haiku — they're doing high-volume role-play of threat-model scenarios at 50+ cells per batch, and Haiku is the only Anthropic model whose usage is included in Max x20 without depleting weekly buckets. (An earlier version of this skill pinned Sonnet for "reasoning headroom" on subtle adversarial patterns, premised on the now-disproven assumption that Sonnet had its own dedicated quota. Sonnet usage actually counts against the all-models weekly bucket along with Opus, so the cost-quality trade-off no longer favors it for high-volume role-play; volume × Sonnet would burn the all-models bucket too fast to justify the marginal quality lift.) Treat Haiku's lower reasoning ceiling as an honest constraint of the test signal — homoglyph / approval-cloak / chain-swap attacks may land less convincingly than they would under Sonnet, which is itself worth surfacing as a methodology caveat in `findings.md`.
 
 **Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. **Default for Sonnet-mode honest / sparse-adversarial runs: 15/batch** (Sonnet-tuned, up from the historical Haiku 10/batch). For matrix-sampled runs from `tools/sample_matrix_run.py`, each emitted `batch-NN/scripts.json` IS one dispatch batch (default 50 cells, sized to fill ~50% of one 5-hour all-models session) — dispatch all of its cells concurrently, no sub-batching. Tune down to 10 or below on rate-limit errors; go higher only after early batches have completed cleanly.
 
@@ -336,7 +342,7 @@ Optionally produce a structured per-script summary with a small Python script ex
 
 ## Phase 5 — Analyze
 
-Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "opus"`. The dispatched per-cell subagents run on Sonnet (Phase 3); the analysis subagent is upgraded to Opus because it does cross-corpus pattern recognition over 50+ transcripts at once and the upgrade materially changes whether subtle multi-cell patterns (Role-C structural risks, layered invariant gaps, education-frame-then-exploit chains) are surfaced. The cost is one Opus run per batch (~250k input + ~10k output ≈ ~260k Opus tokens); see Phase 2.5 for how this lands against the Max-x20 Opus weekly bucket.
+Delegate to a **fresh subagent** (clean context) using `Agent` with `model: "opus"`. The dispatched per-cell subagents run on Haiku (Phase 3); the analysis subagent runs on Opus because it does cross-corpus pattern recognition over 50+ transcripts at once and the model lift materially changes whether subtle multi-cell patterns (Role-C structural risks, layered invariant gaps, education-frame-then-exploit chains) are surfaced. The cost is one Opus run per batch (~70–100k input + ~5–10k output ≈ ~80–100k tokens; batch-1 measured ~82k); see Phase 2.5 for how this lands against the Max-x20 all-models weekly bucket.
 
 ### How exactly to analyze the chat histories (concrete recipe — don't skip)
 
@@ -676,7 +682,7 @@ User honest, agent honest, MCP honest. Establishes that the adversarial roles ar
 - **Coordinated disclosure.** Before publishing security findings publicly, give the maintainer reasonable time to remediate (90 days is industry standard).
 - **No real-world phishing.** Simulated "attacker addresses" must be inert (precompiles, burn addresses, demo personas, randomly-generated junk).
 - **Subagent permissions.** Tool prompts may auto-deny in subagents. Report once as meta-finding; don't re-issue scripts to chase them.
-- **Token cost.** Honest mode ≈ 120 × 35k ≈ 4M tokens. Adversarial sparse ≈ similar. Adversarial matrix ≈ 450 × 50k ≈ 23M tokens (expert) or 660 × 50k ≈ 33M tokens (newcomer). Always run the Phase 2.5 cost preflight gate before dispatching — never silently start a multi-million-token run.
+- **Token cost.** Per-cell dispatch runs on Haiku (no weekly-bucket depletion on Max x20). Phase 5 analysis subagent runs on Opus (~80–100k per batch — batch-1 measured 82k — hits the all-models weekly bucket). Total compute throughput: honest mode ≈ 120 × 35k ≈ 4M Haiku tokens; adversarial matrix ≈ 450 × 25k ≈ 11M Haiku tokens (expert) or 660 × 25k ≈ 16M (newcomer); the 50k anchor used in tooling is conservative ceiling. Always run the Phase 2.5 cost preflight gate before dispatching — even though Haiku is quota-free, the gate exists for the analysis-subagent cost and overall transparency.
 - **Issue volume.** 15-25 well-scoped issues is the sweet spot per run. Fewer than 10 means under-analysis; more than 30 means noise. Group related gaps when natural.
 - **Don't file harness-permission-denial issues** as MCP bugs — Claude Code subagent quirk, not an MCP problem.
 - **Save findings.md to the workdir even if you can't file issues.** The user can file manually.

@@ -6,10 +6,12 @@ many batches to dispatch per session / week / day; the tool just hands them
 the next pending batch and counts overall progress.
 
 Why this exists:
-  A full matrix run on both audiences is 1110 cells ≈ ~56M tokens, well over
-  any single 5-hour Anthropic session and into the weekly Sonnet bucket too.
-  Splitting into batches sized to fill ~50% of one 5-hour all-models session
-  lets you dispatch 1-2 batches per session, paced however suits you.
+  A full matrix run on both audiences is 1110 cells. Per-cell dispatch runs
+  on Haiku per skill/SKILL.md Phase 3, which is quota-free on Max x20 — but
+  rate-limit windows still cap throughput, and the Phase 5 analysis subagent
+  (Opus) does deplete the Opus weekly + all-models weekly buckets. Splitting
+  into batches sized to fill ~50% of one 5-hour all-models session lets you
+  dispatch 1-2 batches per session, paced however suits you.
 
 Sampling strategy:
   - Flatten 1110 cells (450 expert + 660 newcomer, each × {A, B, C}).
@@ -51,13 +53,23 @@ PARTITION_PATH = f'{SAMPLE_DIR}/partition.json'
 PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 
 # Defaults align with skill/SKILL.md Phase 2.5 anchors.
-DEFAULT_SONNET_WEEKLY = 30_000_000
-DEFAULT_OPUS_WEEKLY = 10_000_000  # Phase 5 analysis subagent runs on Opus; smallest bucket
-DEFAULT_ALL_MODELS_WEEKLY = 50_000_000
-DEFAULT_SESSION_ALL_MODELS = 5_000_000  # 5-hour all-models cap, override via flag
-DEFAULT_TOKENS_PER_CELL = 50_000
-DEFAULT_ANALYSIS_TOKENS = 250_000  # one Phase 5 Opus analysis subagent run per batch
-DEFAULT_BATCH_SESSION_FRACTION = 0.5  # batch fills this much of one 5-hour session
+# Bucket model on Max x20 (verified from user's dashboard 2026-04-28):
+#   - Per-cell dispatch runs on Haiku — quota-free, doesn't deplete any
+#     visible bucket.
+#   - Phase 5 analysis runs on Opus — counts against the all-models weekly
+#     bucket. There is NO separate Opus counter visible to the user.
+#   - Sonnet has no separate counter either.
+# Result: all quota tracking collapses to ONE counter (all-models weekly)
+# plus the per-session rate-limit (all-models 5-hour rolling window).
+#
+# All anchors below are placeholder estimates — Anthropic's plan structure
+# evolves and the user's dashboard is the ground truth. Override via flags
+# if these don't match what you see on https://console.anthropic.com .
+DEFAULT_ALL_MODELS_WEEKLY = 50_000_000  # placeholder; verify against dashboard
+DEFAULT_SESSION_ALL_MODELS = 5_000_000  # placeholder 5-hour rolling window cap
+DEFAULT_TOKENS_PER_CELL = 50_000        # conservative upper-bound for Haiku adversarial cell (actual batch-1 average was ~25k); quota-free
+DEFAULT_ANALYSIS_TOKENS = 100_000       # one Opus analysis subagent per batch (actual batch-1: ~82k; rounded up for headroom)
+DEFAULT_BATCH_SESSION_FRACTION = 0.5    # batch fills this much of one 5-hour session
 DEFAULT_SEED = 42
 
 
@@ -108,8 +120,6 @@ def cmd_init(args: argparse.Namespace) -> None:
         'seed': args.seed,
         'batch_size': batch_size,
         'budget_constraint': {
-            'sonnet_weekly_tokens': args.sonnet_weekly,
-            'opus_weekly_tokens': args.opus_weekly,
             'all_models_weekly_tokens': args.all_models_weekly,
             'session_all_models_tokens': args.session_all_models,
             'tokens_per_cell': args.per_cell,
@@ -144,31 +154,27 @@ def cmd_init(args: argparse.Namespace) -> None:
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
 
-    dispatch_tokens = batch_size * args.per_cell        # Sonnet
-    analysis_tokens = args.analysis_tokens              # Opus
-    per_batch_total = dispatch_tokens + analysis_tokens
-    pct_batch_sonnet = dispatch_tokens / args.sonnet_weekly * 100
-    pct_batch_opus = analysis_tokens / args.opus_weekly * 100
-    pct_batch_all = per_batch_total / args.all_models_weekly * 100
-    pct_batch_session = per_batch_total / args.session_all_models * 100
+    dispatch_throughput = batch_size * args.per_cell      # Haiku — quota-free
+    analysis_tokens = args.analysis_tokens                # Opus — hits all-models bucket
+    pct_batch_all = analysis_tokens / args.all_models_weekly * 100
+    pct_batch_session = analysis_tokens / args.session_all_models * 100
 
     print(f"wrote {PARTITION_PATH}")
     print(f"  total cells:     {partition['total_cells']}")
     print(f"  batch size:      {batch_size} cells = "
-          f"~{dispatch_tokens / 1e6:.2f}M Sonnet (dispatch) + "
+          f"~{dispatch_throughput / 1e6:.2f}M Haiku throughput (quota-free) + "
           f"~{analysis_tokens / 1e6:.2f}M Opus (analysis)")
     print(f"  total batches:   {partition['total_batches']}")
     print()
-    print(f"Per batch vs Max-20x caps:")
-    print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
-          f"(anchor ~{args.sonnet_weekly / 1e6:.0f}M)  [dispatch only]")
-    print(f"  Opus weekly:         ~{pct_batch_opus:.1f}% of bucket "
-          f"(anchor ~{args.opus_weekly / 1e6:.0f}M)  [analysis only]")
-    print(f"  All-models weekly:   ~{pct_batch_all:.1f}% of bucket "
-          f"(anchor ~{args.all_models_weekly / 1e6:.0f}M)  [dispatch + analysis]")
+    print(f"Per batch vs Max-20x caps (Phase 5 analysis subagent — only quota-relevant cost):")
+    print(f"  All-models weekly:   ~{pct_batch_all:.2f}% of bucket "
+          f"(~{analysis_tokens / 1e6:.2f}M / anchor ~{args.all_models_weekly / 1e6:.0f}M)")
     print(f"  All-models session:  ~{pct_batch_session:.1f}% of bucket "
-          f"(anchor ~{args.session_all_models / 1e6:.0f}M)  [dispatch + analysis]")
+          f"(~{analysis_tokens / 1e6:.2f}M / anchor ~{args.session_all_models / 1e6:.0f}M)")
     print(f"  seed: {partition['seed']}")
+    print()
+    print(f"Anchors are placeholders — verify against your account dashboard "
+          f"and override via init flags if they don't match.")
 
 
 def cmd_next_batch(args: argparse.Namespace) -> None:
@@ -242,18 +248,13 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
 
     bc = partition['budget_constraint']
     per_cell = bc['tokens_per_cell']
-    sonnet_weekly = bc['sonnet_weekly_tokens']
-    opus_weekly = bc.get('opus_weekly_tokens', DEFAULT_OPUS_WEEKLY)
     all_models_weekly = bc.get('all_models_weekly_tokens', DEFAULT_ALL_MODELS_WEEKLY)
     session_all_models = bc.get('session_all_models_tokens', DEFAULT_SESSION_ALL_MODELS)
     analysis_tokens = bc.get('analysis_tokens', DEFAULT_ANALYSIS_TOKENS)
 
-    dispatch_tokens = len(hydrated) * per_cell                # Sonnet
-    per_batch_total = dispatch_tokens + analysis_tokens       # Sonnet + Opus
-    pct_batch_sonnet = dispatch_tokens / sonnet_weekly * 100
-    pct_batch_opus = analysis_tokens / opus_weekly * 100
-    pct_batch_all = per_batch_total / all_models_weekly * 100
-    pct_batch_session = per_batch_total / session_all_models * 100
+    dispatch_throughput = len(hydrated) * per_cell      # Haiku — quota-free
+    pct_batch_all = analysis_tokens / all_models_weekly * 100
+    pct_batch_session = analysis_tokens / session_all_models * 100
 
     total_batches = progress['total_batches']
     batches_done = sum(1 for b in progress['batches']
@@ -262,26 +263,24 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     print(f"wrote {scripts_path}")
     print()
     print(f"=== Phase 2.5 cost preflight (batch {batch_n}) ===")
-    print(f"Sample:   {len(hydrated)} cells "
+    print(f"Sample:     {len(hydrated)} cells "
           f"(expert: {matrix_counts['expert']}, newcomer: {matrix_counts['newcomer']}; "
           f"A: {role_counts['A']}, B: {role_counts['B']}, C: {role_counts['C']})")
-    print(f"Tokens:   ~{dispatch_tokens / 1e6:.2f}M Sonnet (dispatch) + "
-          f"~{analysis_tokens / 1e6:.2f}M Opus (Phase 5 analysis)")
-    print(f"Progress: {batches_done} / {total_batches} batches done")
+    print(f"Throughput: ~{dispatch_throughput / 1e6:.2f}M Haiku tokens "
+          f"(dispatch — quota-free)")
+    print(f"            ~{analysis_tokens / 1e6:.2f}M Opus tokens "
+          f"(Phase 5 analysis subagent — hits all-models bucket)")
+    print(f"Progress:   {batches_done} / {total_batches} batches done")
     print()
-    print(f"Per batch vs Max-20x caps:")
-    print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
-          f"(anchor ~{sonnet_weekly / 1e6:.0f}M)  [dispatch only]")
-    print(f"  Opus weekly:         ~{pct_batch_opus:.1f}% of bucket "
-          f"(anchor ~{opus_weekly / 1e6:.0f}M)  [analysis only]")
-    print(f"  All-models weekly:   ~{pct_batch_all:.1f}% of bucket "
-          f"(anchor ~{all_models_weekly / 1e6:.0f}M)  [dispatch + analysis]")
+    print(f"Per batch vs Max-20x caps (Phase 5 analysis subagent — only quota-relevant cost):")
+    print(f"  All-models weekly:   ~{pct_batch_all:.2f}% of bucket "
+          f"(~{analysis_tokens / 1e6:.2f}M / anchor ~{all_models_weekly / 1e6:.0f}M)")
     print(f"  All-models session:  ~{pct_batch_session:.1f}% of bucket "
-          f"(anchor ~{session_all_models / 1e6:.0f}M)  [dispatch + analysis]")
+          f"(~{analysis_tokens / 1e6:.2f}M / anchor ~{session_all_models / 1e6:.0f}M)")
     print()
-    print(f"Rough estimates — verify on your account dashboard. Override "
-          f"anchors via `init --sonnet-weekly`, `--opus-weekly`, "
-          f"`--all-models-weekly`, `--session-all-models`.")
+    print(f"Anchors are placeholders — verify against your account dashboard "
+          f"and override via `init --all-models-weekly`, `--session-all-models`, "
+          f"`--analysis-tokens` if they don't match.")
     print()
     print(f"Next: orchestrator confirms with user, then dispatch Phase 3 "
           f"over {scripts_path}, then `mark-completed --batch {batch_n}`.")
@@ -537,13 +536,6 @@ def main() -> None:
 
     p_init = sub.add_parser('init', help='Create the partition (one-time).')
     p_init.add_argument('--seed', type=int, default=DEFAULT_SEED)
-    p_init.add_argument('--sonnet-weekly', dest='sonnet_weekly',
-                        type=int, default=DEFAULT_SONNET_WEEKLY,
-                        help='Sonnet weekly budget in tokens (default: 30M)')
-    p_init.add_argument('--opus-weekly', dest='opus_weekly',
-                        type=int, default=DEFAULT_OPUS_WEEKLY,
-                        help='Opus weekly budget in tokens (default: 10M); '
-                             'Phase 5 analysis subagent runs on Opus, one per batch')
     p_init.add_argument('--all-models-weekly', dest='all_models_weekly',
                         type=int, default=DEFAULT_ALL_MODELS_WEEKLY,
                         help='All-models weekly budget in tokens (default: 50M)')
