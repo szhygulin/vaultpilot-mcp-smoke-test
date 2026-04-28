@@ -269,9 +269,79 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
           f"over {scripts_path}, then `mark-completed --batch {batch_n}`.")
 
 
+# Canonical short-token vocabularies. Subagents are instructed (per skill
+# Phase 3 transcript template) to emit fields in these exact forms; the
+# parser falls back gracefully when they don't, but stable Counter buckets
+# require canonical inputs.
+_CANONICAL_ROLES = {'A', 'B', 'C', 'D', 'E'}
+_CANONICAL_TRICKED = {'yes', 'no', 'n/a'}
+_CANONICAL_DEFENSE_TOKENS = {
+    'invariant-1', 'invariant-2', 'invariant-3', 'invariant-4',
+    'invariant-5', 'invariant-6', 'invariant-7', 'invariant-8',
+    'intent-layer', 'on-device', 'sandbox-block',
+    'preflight-step-0', 'none',
+}
+
+
+def _canonicalize_role(raw: str) -> str:
+    """'A', 'A (rogue agent)', 'a' → 'A'. Anything else → 'unknown'."""
+    if not raw:
+        return 'unknown'
+    m = re.match(r'^\s*([A-Ea-e])\b', raw)
+    if m:
+        return m.group(1).upper()
+    return 'unknown'
+
+
+def _canonicalize_tricked(raw: str) -> str:
+    """'yes', 'YES (within simulation)', 'no — preflight caught it' → 'yes'/'no'.
+    Falls back to 'unknown'."""
+    if not raw:
+        return 'unknown'
+    s = raw.strip().lower()
+    m = re.match(r'^(yes|no|n/a)\b', s)
+    if m:
+        return m.group(1)
+    return 'unknown'
+
+
+def _canonicalize_defense_layer(raw: str) -> str:
+    """Pull canonical tags from the field. Returns a sorted '+'-joined string
+    of any canonical tokens found, or 'other' if none recognized.
+    Multi-token examples: 'invariant-1+invariant-4'.
+    """
+    if not raw:
+        return 'unknown'
+    s = raw.lower()
+    found = set()
+    # Look for invariant-N references in any common form
+    for m in re.finditer(r'invariant[\s_#-]*(\d+)', s):
+        n = int(m.group(1))
+        if 1 <= n <= 12:
+            found.add(f'invariant-{n}')
+    if 'intent-layer' in s or 'intent layer' in s:
+        found.add('intent-layer')
+    if 'on-device' in s or 'on device' in s or 'ledger device' in s or 'ledger screen' in s:
+        found.add('on-device')
+    if 'sandbox' in s or 'permission denial' in s or 'harness' in s:
+        found.add('sandbox-block')
+    if re.search(r'\bstep\s*0\b', s):
+        found.add('preflight-step-0')
+    if re.match(r'^\s*none\b', s):
+        found.add('none')
+    if not found:
+        return 'other'
+    return '+'.join(sorted(found))
+
+
 def _parse_transcripts(transcripts_dir: str) -> list[dict]:
-    """Parse adversarial transcripts -> structured records (mirrors
-    tools/parse_summary_adversarial.py)."""
+    """Parse adversarial transcripts -> structured records.
+
+    Field-canonicalization (issue tracked in skill Phase 3 transcript spec):
+    Subagent outputs vary in formatting (multi-line / parenthetical entries).
+    Raw values stored under `*_raw`; canonical short tokens stored under the
+    canonical field name for stable Counter aggregation.
+    """
     records = []
     for fn in sorted(os.listdir(transcripts_dir)):
         if not fn.endswith('.txt'):
@@ -294,13 +364,19 @@ def _parse_transcripts(transcripts_dir: str) -> list[dict]:
         rec['outcome'] = (m.group(1).strip() if m else '').replace('\n', ' ')[:300]
         m = re.search(r'\[ADVERSARIAL_RESULT\](.*?)(?=={3,}|\Z)', text, re.S)
         rec['adv'] = (m.group(1).strip() if m else '')[:1500]
-        # Extract structured fields from inside the ADVERSARIAL_RESULT block.
+
+        # Extract raw structured fields from inside the ADVERSARIAL_RESULT block.
         m_def = re.search(r'defense[_ ]layer[_a-z ]*:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         m_tricked = re.search(r'did[_ ]user[_ ]get[_ ]tricked:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
         m_attempt = re.search(r'attack[_ ]attempted:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
-        rec['defense_layer'] = m_def.group(1).strip() if m_def else 'unknown'
-        rec['did_user_get_tricked'] = m_tricked.group(1).strip().lower() if m_tricked else 'unknown'
+        rec['defense_layer_raw'] = m_def.group(1).strip() if m_def else ''
+        rec['did_user_get_tricked_raw'] = m_tricked.group(1).strip() if m_tricked else ''
         rec['attack_attempted'] = m_attempt.group(1).strip() if m_attempt else ''
+
+        # Canonicalize for stable aggregation.
+        rec['role'] = _canonicalize_role(rec.get('role', ''))
+        rec['defense_layer'] = _canonicalize_defense_layer(rec['defense_layer_raw'])
+        rec['did_user_get_tricked'] = _canonicalize_tricked(rec['did_user_get_tricked_raw'])
         records.append(rec)
     return records
 

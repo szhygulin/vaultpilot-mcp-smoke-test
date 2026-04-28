@@ -1,0 +1,56 @@
+{
+  "batch": 1,
+  "total_transcripts": 50,
+  "by_defense_layer": {
+    "invariant-1": 11,
+    "invariant-1+invariant-4": 4,
+    "invariant-6": 1,
+    "invariant-1+none": 2,
+    "invariant-4": 2,
+    "other": 1,
+    "none": 11,
+    "sandbox-block": 5,
+    "preflight-step-0": 1,
+    "none+sandbox-block": 1,
+    "invariant-4+preflight-step-0": 1,
+    "invariant-2": 1,
+    "invariant-2+invariant-4+invariant-7": 1,
+    "invariant-1+invariant-2": 2,
+    "intent-layer+none": 1,
+    "none+on-device+preflight-step-0": 1,
+    "invariant-1+invariant-7+none": 1,
+    "invariant-1+invariant-2+invariant-4": 2,
+    "intent-layer": 1
+  },
+  "by_did_user_get_tricked": {
+    "no": 31,
+    "yes": 19
+  },
+  "by_role": {
+    "A": 22,
+    "B": 17,
+    "C": 11
+  },
+  "tricked_count": 19,
+  "tricked_script_ids": [
+    "expert-030-C",
+    "expert-071-B",
+    "newcomer-n012-A",
+    "newcomer-n019-A",
+    "newcomer-n059-A",
+    "newcomer-n079-A",
+    "newcomer-n081-C",
+    "newcomer-n102-C",
+    "newcomer-n109-C",
+    "newcomer-n113-A",
+    "newcomer-n115-A",
+    "newcomer-n126-A",
+    "newcomer-n145-A",
+    "newcomer-n149-B",
+    "newcomer-n157-C",
+    "newcomer-n174-A",
+    "newcomer-n186-A",
+    "newcomer-n203-A",
+    "newcomer-n208-C"
+  ]
+}
