@@ -13,6 +13,116 @@ Findings filed as issues #427–#463 on `szhygulin/vaultpilot-mcp` (tracker issu
 
 The cross-pass executive overview is at [`SUMMARY.md`](SUMMARY.md). Read that first; everything below is supporting evidence.
 
+## How to set up and run a test using Claude Code
+
+This is the workflow distilled from the actual run that produced this corpus. Follow it to re-run against a future vaultpilot-mcp release, or against any other MCP that meets the prerequisites.
+
+### Prerequisites
+
+- **Claude Code** installed and running (this skill is harness-specific).
+- **`gh` CLI** authenticated to GitHub (`gh auth status` should show ✓). Issues will be filed via `gh issue create`.
+- **Target MCP server** installed and reachable from Claude Code's MCP config. For an adversarial run, the MCP must support a **demo / sandbox mode** — the smoke test never broadcasts real transactions.
+- **Companion preflight / security skill** (if testing a wallet or signing-surface MCP) installed at `~/.claude/skills/<preflight-skill>/SKILL.md`. The adversarial defenses are measured against this skill; without it, "did the defense catch the attack?" has no defined success criterion.
+- **Disk + token budget.** A 220-script run is roughly 6–7M tokens of subagent fanout + analysis. Budget accordingly.
+
+### 1. Install the synthesized methodology skill
+
+```bash
+mkdir -p ~/.claude/skills/mcp-smoke-test
+cp <this-repo>/skill/SKILL.md ~/.claude/skills/mcp-smoke-test/SKILL.md
+# OR symlink so the install tracks repo updates:
+ln -sf "$(pwd)/skill/SKILL.md" ~/.claude/skills/mcp-smoke-test/SKILL.md
+```
+
+Restart Claude Code so the skill loader picks up the new directory. After restart you'll see `mcp-smoke-test` listed in the available-skills section of any new session.
+
+### 2. Pick a test vector
+
+Three catalogs ship in [`test-vectors/`](test-vectors/), each tested in production:
+
+| File | Use case | Entries | Role mix |
+|---|---|---|---|
+| [`honest-baseline.json`](test-vectors/honest-baseline.json) | Pass 1 — feature/UX/unprovoked-security baseline. Expert-style prompts. | 120 | All Role E (honest) |
+| [`adversarial.json`](test-vectors/adversarial.json) | Pass 2 — red-team the defense surface against expert prompts. | 111 | A 25, B 44, C 5, D 1, E 4 (initial) + 67 b-scripts |
+| [`newcomer-adversarial.json`](test-vectors/newcomer-adversarial.json) | Pass 3 — newcomer search-term style prompts, high Role-A density (newcomers don't recognize risk patterns). | 220 | A 104, B 7, C 1, D 2, E 106 |
+
+Or generate your own — see `skill/SKILL.md` Phase 2 for catalog targets.
+
+### 3. Set up a workdir
+
+```bash
+mkdir -p ~/dev/<your-target-mcp>-smoke-test/transcripts
+cd ~/dev/<your-target-mcp>-smoke-test
+cp <this-repo>/test-vectors/<your-vector>.json scripts.json
+```
+
+The skill expects this layout:
+
+```
+<workdir>/
+├── scripts.json
+├── transcripts/      ← subagent transcripts written here
+└── (later) all_transcripts.txt, summary.txt, findings.md
+```
+
+### 4. Trigger the skill
+
+Open Claude Code in the workdir. Prompt the agent:
+
+> Run a smoke test on `<your-target-mcp>` using the script catalog at `scripts.json`. Apply demo/sandbox mode — no broadcasts.
+
+For an adversarial run, add:
+
+> Use adversarial mode. Each subagent gets the role assignment from `scripts.json[role]`. Apply the companion `<preflight-skill>` skill on signing flows.
+
+The skill picks up the catalog and dispatches subagents in **background batches of 10**. Each subagent writes a transcript to `transcripts/NNN.txt`.
+
+### 5. Wait — but don't sit on it
+
+Subagents run in background. Each one's completion notifies Claude Code in the parent session. **Don't poll progress** — the harness handles notifications. Total wall time is roughly:
+
+- 10 subagents in parallel × ~2 min average = ~2 min per batch
+- 22 batches for a 220-script run ≈ 30–60 min wall time
+
+Use the time productively. Don't kill the parent session.
+
+### 6. Concatenate, parse, analyze (Phase 4 + 5)
+
+Once all transcripts land, the skill:
+
+1. Concatenates `transcripts/*.txt` → `all_transcripts.txt`
+2. Runs the Python parser (Phase 5.2 in `skill/SKILL.md`) → `summary.txt`
+3. Delegates to a **fresh analysis subagent** with the canonical prompt (Phase 5.4)
+4. Writes the subagent's reply → `findings.md`
+
+The analysis is mandatory in a separate subagent; the parent has too much context bloat from dispatch to produce honest analysis. See the "How exactly to analyze the chat histories" section of `skill/SKILL.md` for the recipe.
+
+### 7. File feedback (Phase 6)
+
+The skill files one GitHub issue per distinct gap on the target MCP's repo, plus a tracker. Confirm `gh auth status` is healthy first. The skill respects rate limits on any in-MCP feedback tool (e.g. `request_capability`-style) and falls back to `gh issue create` otherwise.
+
+If the user said "without my approval" up front, the skill batch-files. Otherwise it files one issue, surfaces the URL, and asks before continuing.
+
+### 8. Commit the artifacts
+
+The full workdir (scripts.json + transcripts/ + summary.txt + findings.md + all_transcripts.txt) is the audit trail. Commit it to a results repo (this one is the canonical example):
+
+```bash
+cd <workdir>
+git init && git add . && git commit -m "Smoke-test corpus for <target-mcp> on <date>"
+gh repo create szhygulin/<target-mcp>-smoke-test --private --source=. --push
+```
+
+For protection rules matching this repo, see `gh api -X PUT repos/.../branches/main/protection` (1 PR review required, force-push disabled, deletions disabled).
+
+### Lessons from the actual run
+
+- **Subagent permission denials** muddy ~30% of read-only scripts in some Claude Code configs. Document once as meta-finding; don't generate per-script bug reports.
+- **Don't merge dispatch and analysis in the same agent.** Cross-context contamination produces narrative-confirmation bias.
+- **Inv #2 hash-recompute is tautological in 100% of rogue-MCP cases** (44 b-scripts confirmed verbatim). Mention this in the analysis prompt so the analyzer doesn't mis-rank Inv #2 vs Inv #1.
+- **Selection-layer attacks** (Role A "agent picks the wrong durable object") need explicit attention in the analysis prompt or they get bucketed as bytes-tamper and mis-classified.
+- **Always include 4–10 control scripts (Role E)** in adversarial runs to confirm the analyzer isn't inflating false-positive defense triggers.
+
 ## Layout
 
 ```
