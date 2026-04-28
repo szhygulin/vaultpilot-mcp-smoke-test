@@ -1,14 +1,12 @@
 {
-  "created_at": "2026-04-28T17:15:20Z",
+  "created_at": "2026-04-28T17:37:08Z",
   "seed": 42,
   "batch_size": 50,
   "budget_constraint": {
-    "sonnet_weekly_tokens": 30000000,
-    "opus_weekly_tokens": 10000000,
     "all_models_weekly_tokens": 50000000,
     "session_all_models_tokens": 5000000,
     "tokens_per_cell": 50000,
-    "analysis_tokens": 250000,
+    "analysis_tokens": 100000,
     "batch_session_fraction": 0.5
   },
   "total_cells": 1110,
