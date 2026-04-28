@@ -60,7 +60,7 @@ DEFAULT_SESSION_ALL_MODELS = 5_000_000  # 5-hour window all-models cap; rough Ma
 DEFAULT_FRACTION = 0.9
 DEFAULT_TOKENS_PER_CELL = 50_000
 DEFAULT_ANALYSIS_TOKENS = 250_000
-DEFAULT_BATCH_SIZE = 15
+DEFAULT_BATCH_SESSION_FRACTION = 0.5  # batch fills this much of one 5-hour session
 DEFAULT_SEED = 42
 
 
@@ -98,8 +98,19 @@ def cmd_init(args: argparse.Namespace) -> None:
     if cells_per_week < 1:
         sys.exit("derived cells_per_week < 1 — check your budget args")
 
+    # Auto-derive batch size to fill DEFAULT_BATCH_SESSION_FRACTION of one
+    # 5-hour all-models session; --batch-size overrides.
+    if args.batch_size is None:
+        batch_size = max(1, int(args.session_all_models *
+                                DEFAULT_BATCH_SESSION_FRACTION /
+                                args.per_cell))
+    else:
+        batch_size = args.batch_size
+
     weeks = [cells[i:i + cells_per_week]
              for i in range(0, len(cells), cells_per_week)]
+    batches_per_week = [(len(w) + batch_size - 1) // batch_size for w in weeks]
+    total_batches = sum(batches_per_week)
 
     os.makedirs(SAMPLE_DIR, exist_ok=True)
 
@@ -114,12 +125,17 @@ def cmd_init(args: argparse.Namespace) -> None:
             'budget_fraction': args.fraction,
             'tokens_per_cell': args.per_cell,
             'analysis_tokens': args.analysis_tokens,
+            'batch_session_fraction': DEFAULT_BATCH_SESSION_FRACTION,
             'derived_cells_per_week': cells_per_week,
         },
-        'batch_size': args.batch_size,
+        'batch_size': batch_size,
         'total_cells': len(cells),
         'total_weeks': len(weeks),
-        'weeks': [{'week': i + 1, 'cells': w} for i, w in enumerate(weeks)],
+        'total_batches': total_batches,
+        'weeks': [
+            {'week': i + 1, 'batches': batches_per_week[i], 'cells': w}
+            for i, w in enumerate(weeks)
+        ],
     }
     with open(PARTITION_PATH, 'w') as f:
         json.dump(partition, f, indent=2)
@@ -127,10 +143,12 @@ def cmd_init(args: argparse.Namespace) -> None:
     progress = {
         'created_at': partition['created_at'],
         'total_weeks': len(weeks),
+        'total_batches': total_batches,
         'weeks': [
             {
                 'week': i + 1,
                 'cell_count': len(w),
+                'batches': batches_per_week[i],
                 'status': 'pending',
                 'started_at': None,
                 'completed_at': None,
@@ -142,7 +160,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
 
-    per_batch_tokens = args.batch_size * args.per_cell
+    per_batch_tokens = batch_size * args.per_cell
     pct_batch_sonnet = per_batch_tokens / args.sonnet_weekly * 100
     pct_batch_all = per_batch_tokens / args.all_models_weekly * 100
     pct_batch_session = per_batch_tokens / args.session_all_models * 100
@@ -151,7 +169,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"  total cells:    {partition['total_cells']}")
     print(f"  cells/week:     {partition['cells_per_week']}")
     print(f"  total weeks:    {partition['total_weeks']}")
-    print(f"  batch:          {args.batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
+    print(f"  batch:          {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
+    print(f"  total batches:  {total_batches} "
+          f"(per week: {', '.join(str(b) for b in batches_per_week)})")
     print()
     print(f"Per batch vs Max-20x caps:")
     print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
@@ -247,6 +267,18 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     pct_batch_all_weekly = per_batch_tokens / all_models_weekly * 100
     pct_batch_session = per_batch_tokens / session_all_models * 100
 
+    batches_this_week = next(w['batches'] for w in partition['weeks']
+                             if w['week'] == week_n)
+    total_batches = partition.get(
+        'total_batches',
+        sum(w.get('batches', 0) for w in partition['weeks'])
+    )
+    batches_done = sum(
+        w.get('batches', 0)
+        for w in progress['weeks']
+        if w['status'] == 'completed'
+    )
+
     print(f"wrote {scripts_path}")
     print()
     print(f"=== Phase 2.5 cost preflight (week {week_n}) ===")
@@ -254,6 +286,8 @@ def cmd_next_week(args: argparse.Namespace) -> None:
           f"(expert: {matrix_counts['expert']}, newcomer: {matrix_counts['newcomer']}; "
           f"A: {role_counts['A']}, B: {role_counts['B']}, C: {role_counts['C']})")
     print(f"Batch:  {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
+    print(f"Batches this week: {batches_this_week}  "
+          f"|  Plan: {batches_done} / {total_batches} batches done")
     print()
     print(f"Per batch vs Max-20x caps:")
     print(f"  Sonnet weekly:       ~{pct_batch_sonnet_weekly:.1f}% of bucket "
@@ -333,8 +367,9 @@ def main() -> None:
                         type=int, default=DEFAULT_TOKENS_PER_CELL,
                         help='Tokens per cell estimate (default: 50k)')
     p_init.add_argument('--batch-size', dest='batch_size',
-                        type=int, default=DEFAULT_BATCH_SIZE,
-                        help='Concurrent subagents per dispatch batch (default: 15)')
+                        type=int, default=None,
+                        help='Concurrent subagents per dispatch batch '
+                             '(default: auto-derive to fill ~50%% of session anchor)')
     p_init.add_argument('--force', action='store_true',
                         help='Overwrite existing partition.json + progress.json')
     p_init.set_defaults(func=cmd_init)

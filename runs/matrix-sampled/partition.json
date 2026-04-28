@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-28T14:04:19Z",
+  "created_at": "2026-04-28T14:09:20Z",
   "seed": 42,
   "cells_per_week": 540,
   "budget_constraint": {
@@ -9,14 +9,17 @@
     "budget_fraction": 0.9,
     "tokens_per_cell": 50000,
     "analysis_tokens": 250000,
+    "batch_session_fraction": 0.5,
     "derived_cells_per_week": 540
   },
-  "batch_size": 15,
+  "batch_size": 50,
   "total_cells": 1110,
   "total_weeks": 3,
+  "total_batches": 23,
   "weeks": [
     {
       "week": 1,
+      "batches": 11,
       "cells": [
         {
           "matrix": "expert",
@@ -2722,6 +2725,7 @@
     },
     {
       "week": 2,
+      "batches": 11,
       "cells": [
         {
           "matrix": "newcomer",
@@ -5427,6 +5431,7 @@
     },
     {
       "week": 3,
+      "batches": 1,
       "cells": [
         {
           "matrix": "newcomer",
