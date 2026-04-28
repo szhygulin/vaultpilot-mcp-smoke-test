@@ -52,9 +52,11 @@ PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 
 # Defaults align with skill/SKILL.md Phase 2.5 anchors.
 DEFAULT_SONNET_WEEKLY = 30_000_000
+DEFAULT_OPUS_WEEKLY = 10_000_000  # Phase 5 analysis subagent runs on Opus; smallest bucket
 DEFAULT_ALL_MODELS_WEEKLY = 50_000_000
 DEFAULT_SESSION_ALL_MODELS = 5_000_000  # 5-hour all-models cap, override via flag
 DEFAULT_TOKENS_PER_CELL = 50_000
+DEFAULT_ANALYSIS_TOKENS = 250_000  # one Phase 5 Opus analysis subagent run per batch
 DEFAULT_BATCH_SESSION_FRACTION = 0.5  # batch fills this much of one 5-hour session
 DEFAULT_SEED = 42
 
@@ -107,9 +109,11 @@ def cmd_init(args: argparse.Namespace) -> None:
         'batch_size': batch_size,
         'budget_constraint': {
             'sonnet_weekly_tokens': args.sonnet_weekly,
+            'opus_weekly_tokens': args.opus_weekly,
             'all_models_weekly_tokens': args.all_models_weekly,
             'session_all_models_tokens': args.session_all_models,
             'tokens_per_cell': args.per_cell,
+            'analysis_tokens': args.analysis_tokens,
             'batch_session_fraction': DEFAULT_BATCH_SESSION_FRACTION,
         },
         'total_cells': len(cells),
@@ -140,23 +144,30 @@ def cmd_init(args: argparse.Namespace) -> None:
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
 
-    per_batch_tokens = batch_size * args.per_cell
-    pct_batch_sonnet = per_batch_tokens / args.sonnet_weekly * 100
-    pct_batch_all = per_batch_tokens / args.all_models_weekly * 100
-    pct_batch_session = per_batch_tokens / args.session_all_models * 100
+    dispatch_tokens = batch_size * args.per_cell        # Sonnet
+    analysis_tokens = args.analysis_tokens              # Opus
+    per_batch_total = dispatch_tokens + analysis_tokens
+    pct_batch_sonnet = dispatch_tokens / args.sonnet_weekly * 100
+    pct_batch_opus = analysis_tokens / args.opus_weekly * 100
+    pct_batch_all = per_batch_total / args.all_models_weekly * 100
+    pct_batch_session = per_batch_total / args.session_all_models * 100
 
     print(f"wrote {PARTITION_PATH}")
     print(f"  total cells:     {partition['total_cells']}")
-    print(f"  batch size:      {batch_size} cells = ~{per_batch_tokens / 1e6:.2f}M tokens")
+    print(f"  batch size:      {batch_size} cells = "
+          f"~{dispatch_tokens / 1e6:.2f}M Sonnet (dispatch) + "
+          f"~{analysis_tokens / 1e6:.2f}M Opus (analysis)")
     print(f"  total batches:   {partition['total_batches']}")
     print()
     print(f"Per batch vs Max-20x caps:")
     print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
-          f"(anchor ~{args.sonnet_weekly / 1e6:.0f}M)")
+          f"(anchor ~{args.sonnet_weekly / 1e6:.0f}M)  [dispatch only]")
+    print(f"  Opus weekly:         ~{pct_batch_opus:.1f}% of bucket "
+          f"(anchor ~{args.opus_weekly / 1e6:.0f}M)  [analysis only]")
     print(f"  All-models weekly:   ~{pct_batch_all:.1f}% of bucket "
-          f"(anchor ~{args.all_models_weekly / 1e6:.0f}M)")
+          f"(anchor ~{args.all_models_weekly / 1e6:.0f}M)  [dispatch + analysis]")
     print(f"  All-models session:  ~{pct_batch_session:.1f}% of bucket "
-          f"(anchor ~{args.session_all_models / 1e6:.0f}M)")
+          f"(anchor ~{args.session_all_models / 1e6:.0f}M)  [dispatch + analysis]")
     print(f"  seed: {partition['seed']}")
 
 
@@ -232,13 +243,17 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     bc = partition['budget_constraint']
     per_cell = bc['tokens_per_cell']
     sonnet_weekly = bc['sonnet_weekly_tokens']
+    opus_weekly = bc.get('opus_weekly_tokens', DEFAULT_OPUS_WEEKLY)
     all_models_weekly = bc.get('all_models_weekly_tokens', DEFAULT_ALL_MODELS_WEEKLY)
     session_all_models = bc.get('session_all_models_tokens', DEFAULT_SESSION_ALL_MODELS)
+    analysis_tokens = bc.get('analysis_tokens', DEFAULT_ANALYSIS_TOKENS)
 
-    per_batch_tokens = len(hydrated) * per_cell
-    pct_batch_sonnet = per_batch_tokens / sonnet_weekly * 100
-    pct_batch_all = per_batch_tokens / all_models_weekly * 100
-    pct_batch_session = per_batch_tokens / session_all_models * 100
+    dispatch_tokens = len(hydrated) * per_cell                # Sonnet
+    per_batch_total = dispatch_tokens + analysis_tokens       # Sonnet + Opus
+    pct_batch_sonnet = dispatch_tokens / sonnet_weekly * 100
+    pct_batch_opus = analysis_tokens / opus_weekly * 100
+    pct_batch_all = per_batch_total / all_models_weekly * 100
+    pct_batch_session = per_batch_total / session_all_models * 100
 
     total_batches = progress['total_batches']
     batches_done = sum(1 for b in progress['batches']
@@ -250,20 +265,23 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
     print(f"Sample:   {len(hydrated)} cells "
           f"(expert: {matrix_counts['expert']}, newcomer: {matrix_counts['newcomer']}; "
           f"A: {role_counts['A']}, B: {role_counts['B']}, C: {role_counts['C']})")
-    print(f"Tokens:   ~{per_batch_tokens / 1e6:.2f}M for this batch")
+    print(f"Tokens:   ~{dispatch_tokens / 1e6:.2f}M Sonnet (dispatch) + "
+          f"~{analysis_tokens / 1e6:.2f}M Opus (Phase 5 analysis)")
     print(f"Progress: {batches_done} / {total_batches} batches done")
     print()
     print(f"Per batch vs Max-20x caps:")
     print(f"  Sonnet weekly:       ~{pct_batch_sonnet:.1f}% of bucket "
-          f"(anchor ~{sonnet_weekly / 1e6:.0f}M)")
+          f"(anchor ~{sonnet_weekly / 1e6:.0f}M)  [dispatch only]")
+    print(f"  Opus weekly:         ~{pct_batch_opus:.1f}% of bucket "
+          f"(anchor ~{opus_weekly / 1e6:.0f}M)  [analysis only]")
     print(f"  All-models weekly:   ~{pct_batch_all:.1f}% of bucket "
-          f"(anchor ~{all_models_weekly / 1e6:.0f}M)")
+          f"(anchor ~{all_models_weekly / 1e6:.0f}M)  [dispatch + analysis]")
     print(f"  All-models session:  ~{pct_batch_session:.1f}% of bucket "
-          f"(anchor ~{session_all_models / 1e6:.0f}M)")
+          f"(anchor ~{session_all_models / 1e6:.0f}M)  [dispatch + analysis]")
     print()
     print(f"Rough estimates — verify on your account dashboard. Override "
-          f"anchors via `init --sonnet-weekly`, `--all-models-weekly`, "
-          f"`--session-all-models`.")
+          f"anchors via `init --sonnet-weekly`, `--opus-weekly`, "
+          f"`--all-models-weekly`, `--session-all-models`.")
     print()
     print(f"Next: orchestrator confirms with user, then dispatch Phase 3 "
           f"over {scripts_path}, then `mark-completed --batch {batch_n}`.")
@@ -522,6 +540,10 @@ def main() -> None:
     p_init.add_argument('--sonnet-weekly', dest='sonnet_weekly',
                         type=int, default=DEFAULT_SONNET_WEEKLY,
                         help='Sonnet weekly budget in tokens (default: 30M)')
+    p_init.add_argument('--opus-weekly', dest='opus_weekly',
+                        type=int, default=DEFAULT_OPUS_WEEKLY,
+                        help='Opus weekly budget in tokens (default: 10M); '
+                             'Phase 5 analysis subagent runs on Opus, one per batch')
     p_init.add_argument('--all-models-weekly', dest='all_models_weekly',
                         type=int, default=DEFAULT_ALL_MODELS_WEEKLY,
                         help='All-models weekly budget in tokens (default: 50M)')
@@ -531,6 +553,10 @@ def main() -> None:
     p_init.add_argument('--per-cell', dest='per_cell',
                         type=int, default=DEFAULT_TOKENS_PER_CELL,
                         help='Tokens per cell estimate (default: 50k)')
+    p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
+                        type=int, default=DEFAULT_ANALYSIS_TOKENS,
+                        help='Phase 5 analysis subagent token estimate '
+                             '(default: 250k; runs on Opus)')
     p_init.add_argument('--batch-size', dest='batch_size',
                         type=int, default=None,
                         help='Concurrent subagents per batch '
