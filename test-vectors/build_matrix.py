@@ -63,7 +63,12 @@ def main() -> None:
 
     by_audience = {'expert': len(expert['rows']), 'newcomer': len(newcomer['rows'])}
     total_rows = len(rows)
-    roles = list(expert['roleLegend'].keys())
+
+    cells_total = sum(len(r['cells']) for r in rows)
+    cells_by_role = {}
+    for r in rows:
+        for role in r['cells']:
+            cells_by_role[role] = cells_by_role.get(role, 0) + 1
 
     out = {
         '_comment': (
@@ -78,8 +83,9 @@ def main() -> None:
         'rows': rows,
         'totals': {
             'rows': total_rows,
-            'roles': len(roles),
-            'cells': total_rows * len(roles),
+            'roles_in_legend': len(expert['roleLegend']),
+            'cells': cells_total,
+            'cells_by_role': cells_by_role,
             'by_audience': by_audience,
         },
     }
@@ -87,8 +93,8 @@ def main() -> None:
     with open(OUT_PATH, 'w') as f:
         json.dump(out, f, indent=2)
 
-    print(f"wrote {OUT_PATH}: {out['totals']['cells']} cells "
-          f"({out['totals']['rows']} rows × {out['totals']['roles']} roles)")
+    print(f"wrote {OUT_PATH}: {cells_total} cells "
+          f"({total_rows} rows; cells by role: {cells_by_role})")
     print(f"  by audience: {by_audience}")
 
 
