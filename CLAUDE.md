@@ -12,3 +12,13 @@ When asked to "commit and push", interpret that as:
 4. Open a PR with `gh pr create` and return the PR URL.
 
 If you're already sitting on `main` with local commits when this comes up, move them to a new branch before pushing — do not push `main` directly. Reset `main` to `origin/main` only after the new branch is in place and pushed.
+
+## mcp-smoke-test skill is binding
+
+When the `mcp-smoke-test` skill is loaded (it lives at `skill/SKILL.md` in this repo and is symlinked/installed at `~/.claude/skills/mcp-smoke-test/`), every instruction in it is **mandatory**, not advisory. In particular:
+
+- **Phase 2.5 cost preflight is a hard gate.** Never dispatch a batch without first surfacing the cost preflight block (sample, role distribution, out-of-scope/control share, Haiku throughput, Opus analysis cost, wall-clock estimate, filing target) AND getting explicit user confirmation. Running `next-batch` prints the block, but printing is not confirming — pause for user OK before any Agent dispatch.
+- **Use the pre-approved helper subcommands** (`inspect-batch`, `verify-transcripts`, `mark-completed`, `aggregate-batch`, `next-batch`, `status`) instead of ad-hoc `python3 -c "..."` whenever the helper covers the operation. Each ad-hoc Python invocation triggers a fresh permission prompt; the helpers are already in the user's approved set.
+- **Don't skip steps** in the 6-phase pipeline (Catalog → Generate → Cost preflight → Spawn → Concat → Analyze → File). Phases 1, 4, 6 are mode-independent; Phases 2, 3, 5 branch by mode (honest vs. adversarial). Cost preflight (2.5) is mandatory in both modes.
+- **A.5 / C.5 findings never go in `issues.draft.json`.** They route to the §7 upstream-escalation note (chat-client output filter for injection-shaped, model-layer safety for model-shaped). Filing them as MCP/skill defects produces security theater per issue #21.
+- If a skill instruction conflicts with what looks faster or simpler, the skill wins. Surface the conflict to the user before deviating.
