@@ -1,19 +1,19 @@
 {
-  "created_at": "2026-04-28T13:16:31Z",
+  "created_at": "2026-04-28T14:16:05Z",
   "seed": 42,
-  "cells_per_week": 540,
+  "batch_size": 50,
   "budget_constraint": {
     "sonnet_weekly_tokens": 30000000,
-    "budget_fraction": 0.9,
+    "all_models_weekly_tokens": 50000000,
+    "session_all_models_tokens": 5000000,
     "tokens_per_cell": 50000,
-    "derived_cells_per_week": 540
+    "batch_session_fraction": 0.5
   },
-  "batch_size": 15,
   "total_cells": 1110,
-  "total_weeks": 3,
-  "weeks": [
+  "total_batches": 23,
+  "batches": [
     {
-      "week": 1,
+      "batch": 1,
       "cells": [
         {
           "matrix": "expert",
@@ -264,7 +264,12 @@
           "matrix": "newcomer",
           "row_id": "n043",
           "role": "B"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 2,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "053",
@@ -514,7 +519,12 @@
           "matrix": "expert",
           "row_id": "023",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 3,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n119",
@@ -764,7 +774,12 @@
           "matrix": "expert",
           "row_id": "017",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 4,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n170",
@@ -1014,7 +1029,12 @@
           "matrix": "expert",
           "row_id": "049",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 5,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n195",
@@ -1264,7 +1284,12 @@
           "matrix": "newcomer",
           "row_id": "n087",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 6,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n084",
@@ -1514,7 +1539,12 @@
           "matrix": "newcomer",
           "row_id": "n215",
           "role": "B"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 7,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n047",
@@ -1764,7 +1794,12 @@
           "matrix": "newcomer",
           "row_id": "n080",
           "role": "B"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 8,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n036",
@@ -2014,7 +2049,12 @@
           "matrix": "newcomer",
           "row_id": "n133",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 9,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n093",
@@ -2264,7 +2304,12 @@
           "matrix": "expert",
           "row_id": "072",
           "role": "B"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 10,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "143",
@@ -2514,7 +2559,12 @@
           "matrix": "expert",
           "row_id": "047",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 11,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n105",
@@ -2714,12 +2764,7 @@
           "matrix": "newcomer",
           "row_id": "n205",
           "role": "B"
-        }
-      ]
-    },
-    {
-      "week": 2,
-      "cells": [
+        },
         {
           "matrix": "newcomer",
           "row_id": "n115",
@@ -2769,7 +2814,12 @@
           "matrix": "newcomer",
           "row_id": "n111",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 12,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n122",
@@ -3019,7 +3069,12 @@
           "matrix": "newcomer",
           "row_id": "n183",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 13,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n055",
@@ -3269,7 +3324,12 @@
           "matrix": "newcomer",
           "row_id": "n062",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 14,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n185",
@@ -3519,7 +3579,12 @@
           "matrix": "expert",
           "row_id": "093",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 15,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "054",
@@ -3769,7 +3834,12 @@
           "matrix": "expert",
           "row_id": "090",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 16,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "108",
@@ -4019,7 +4089,12 @@
           "matrix": "newcomer",
           "row_id": "n193",
           "role": "B"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 17,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n006",
@@ -4269,7 +4344,12 @@
           "matrix": "newcomer",
           "row_id": "n154",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 18,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "121",
@@ -4519,7 +4599,12 @@
           "matrix": "newcomer",
           "row_id": "n080",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 19,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n190",
@@ -4769,7 +4854,12 @@
           "matrix": "newcomer",
           "row_id": "n198",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 20,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "056",
@@ -5019,7 +5109,12 @@
           "matrix": "newcomer",
           "row_id": "n197",
           "role": "A"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 21,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n054",
@@ -5269,7 +5364,12 @@
           "matrix": "expert",
           "row_id": "049",
           "role": "C"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 22,
+      "cells": [
         {
           "matrix": "newcomer",
           "row_id": "n033",
@@ -5419,12 +5519,7 @@
           "matrix": "expert",
           "row_id": "064",
           "role": "A"
-        }
-      ]
-    },
-    {
-      "week": 3,
-      "cells": [
+        },
         {
           "matrix": "newcomer",
           "row_id": "n218",
@@ -5524,7 +5619,12 @@
           "matrix": "expert",
           "row_id": "021",
           "role": "B"
-        },
+        }
+      ]
+    },
+    {
+      "batch": 23,
+      "cells": [
         {
           "matrix": "expert",
           "row_id": "022",
