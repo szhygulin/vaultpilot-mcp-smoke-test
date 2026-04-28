@@ -80,6 +80,6 @@ Existing tracker #456 should reference the b-script expansion and the 4 new issu
 
 ## Files
 
-- Full corpus: `/Users/s/dev/test_mcp/smoketest-adversarial/all_transcripts_full.txt` (1.8 MB, 111 scripts)
-- Per-script summary: `/Users/s/dev/test_mcp/smoketest-adversarial/summary_full.txt` (103 KB)
-- Original 44-script analysis: `/Users/s/dev/test_mcp/smoketest-adversarial/findings_adversarial.md`
+- Full corpus: `/Users/s/dev/test_mcp/runs/pass-2-adversarial/all_transcripts_full.txt` (1.8 MB, 111 scripts)
+- Per-script summary: `/Users/s/dev/test_mcp/runs/pass-2-adversarial/summary_full.txt` (103 KB)
+- Original 44-script analysis: `/Users/s/dev/test_mcp/runs/pass-2-adversarial/findings_adversarial.md`
