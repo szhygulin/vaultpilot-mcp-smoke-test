@@ -127,7 +127,7 @@ Inputs from the chosen run plan:
 
 Per-subagent token anchors (8-tool-call cap):
 - Honest mode (Haiku per-cell): ~25–35k input + ~5k output ≈ **~35k total**.
-- Adversarial mode (Haiku per-cell, role-play overhead): ~20–35k input + ~5k output ≈ **~25–30k total** (batch-1 measured average; tooling now uses 25k as the per-cell anchor — the earlier 50k was a Sonnet-era ceiling that didn't get recalibrated until Phase D).
+- Adversarial mode (Haiku per-cell, full preflight + multi-tool MCP calls): batch-1 measured **~125–155k total per subagent** (average ~130k across 50 cells). Tooling uses 130k as the per-cell anchor as of post-batch-1 recalibration — a 14-role adversarial cell with preflight Step-0, MCP roundtrips, and report writing is ~5× heavier than the earlier honest-mode 25k anchor.
 - Phase 5 analysis subagent (Opus): ~70–100k input (full `summary.txt`) + ~5–10k output ≈ **~80–100k total** (batch-1 measured ~82k).
 
 Quota-relevant total ≈ `analysis_subagent` only (per-cell dispatch on Haiku doesn't deplete weekly buckets on Max x20).
@@ -188,7 +188,7 @@ python3 tools/sample_matrix_run.py mark-completed --batch NN   # 2. auto-aggrega
 # … 4. orchestrator drafts issues from findings → files via gh, records in batch-NN/issues.md …
 ```
 
-The tool flattens both matrices, shuffles once with a fixed seed, and slices into fixed-size batches sized to fill ~25% of one 5-hour all-models session as a pacing heuristic (default **50 cells / ~1.25M Haiku throughput per batch → 181 batches** for the full 9020-cell unified matrix). The session-fraction target was tightened from 50% to 25% in Phase D AND the per-cell anchor was corrected from 50k (Sonnet ceiling, leftover after the Haiku switch) to 25k (measured Haiku average), so the realized batch size stays at 50 cells while the budget shrinks to match what Haiku-dispatch actually consumes. Note: Haiku itself is quota-free on Max-x20, so this 25%-of-session is rate-limit / parent-context pacing, not actual quota cost — the only quota-relevant per-batch cost is the Phase 5 Opus analysis subagent (~100k tokens, ~2% of session). The user decides how many batches to dispatch per week / per session; the tool just hands them the next pending batch and counts overall progress.
+The tool flattens both matrices, shuffles once with a fixed seed, and slices into fixed-size batches sized to fill ~25% of one 5-hour all-models session as a pacing heuristic. After batch-1 was actually run (50 cells, 14 roles, ~6.5M Haiku throughput aggregate) the per-cell anchor was recalibrated from 25k → **130k** (measured average across the 50 subagents; range 125-155k; full preflight + multi-tool MCP cells are ~5× heavier than the earlier honest-mode anchor) and analysis-tokens from 100k → **82k** (measured). On a fresh `init`, that gives **~9 cells/batch ≈ 1000 batches** for the 9020-cell matrix. The existing batch-1 partition (created at init time) kept its old anchor and remained at 50 cells — that's fine; the partition is captured-at-init and re-init is the user's call. Note: Haiku itself is quota-free on Max-x20 per the user's dashboard observation, so the "25% of session" is a parent-context / pacing heuristic, not actual quota cost — the only quota-relevant per-batch cost is the Phase 5 Opus analysis subagent (~82k tokens, ~1.6% of session, ~0.16% of weekly). The user decides how many batches to dispatch per week / per session; the tool just hands them the next pending batch and counts overall progress.
 
 Each batch's `scripts.json` is in the same shape Phase 3 dispatches consume, with `role` and `attack` already inlined per cell. Dispatch all cells in the batch concurrently (the batch IS the dispatch unit) — no further per-batch sub-batching needed.
 
@@ -224,13 +224,24 @@ Workdir layout:
 ```
 <workdir>/
 ├── scripts.json
-├── transcripts/      # one NNN.txt per script
+├── transcripts/      # one NNN.txt per script (auto-created by next-batch)
 └── (later) all_transcripts.txt, summary.txt, findings.md
 ```
 
+**Use the pre-approved helper subcommands instead of ad-hoc Python.** Each fresh `python3 -c "..."` triggers a permission prompt; the subcommands listed below are part of the existing `tools/sample_matrix_run.py` surface and already in the user's approved set.
+
+| Need | Use this | NOT this |
+|---|---|---|
+| List the pending cells in a batch (id, role, category, chain, script) | `python3 tools/sample_matrix_run.py inspect-batch --batch N` | `python3 -c "import json; d = json.load(...); ..."` |
+| Confirm transcripts have the strict format the aggregator parses | `python3 tools/sample_matrix_run.py verify-transcripts --batch N` | `grep -L "ADVERSARIAL_RESULT" runs/.../*.txt` |
+| Repair transcripts that drifted from the strict format | `python3 tools/sample_matrix_run.py verify-transcripts --batch N --repair` | ad-hoc Python regex injection |
+| Auto-aggregate after subagents finish | `python3 tools/sample_matrix_run.py mark-completed --batch N` | inline aggregation |
+
+`next-batch` already pre-creates `runs/matrix-sampled/batch-NN/transcripts/`, so dispatch can write directly without a separate `mkdir`.
+
 Dispatch in **background batches** using `Agent` with `run_in_background: true`, `subagent_type: "general-purpose"`, and `model: "haiku"`. The orchestrator running this skill stays on its default model (Opus); only the spawned per-cell subagents run on Haiku — they're doing high-volume role-play of threat-model scenarios at 50+ cells per batch, and Haiku is the only Anthropic model whose usage is included in Max x20 without depleting weekly buckets. (An earlier version of this skill pinned Sonnet for "reasoning headroom" on subtle adversarial patterns, premised on the now-disproven assumption that Sonnet had its own dedicated quota. Sonnet usage actually counts against the all-models weekly bucket along with Opus, so the cost-quality trade-off no longer favors it for high-volume role-play; volume × Sonnet would burn the all-models bucket too fast to justify the marginal quality lift.) Treat Haiku's lower reasoning ceiling as an honest constraint of the test signal — homoglyph / approval-cloak / chain-swap attacks may land less convincingly than they would under Sonnet, which is itself worth surfacing as a methodology caveat in `findings.md`.
 
-**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. **Default for Sonnet-mode honest / sparse-adversarial runs: 15/batch** (Sonnet-tuned, up from the historical Haiku 10/batch). For matrix-sampled runs from `tools/sample_matrix_run.py`, each emitted `batch-NN/scripts.json` IS one dispatch batch (default 50 cells, sized to fill ~25% of one 5-hour all-models session at the measured Haiku 25k/cell rate) — dispatch all of its cells concurrently, no sub-batching. Tune down to 10 or below on rate-limit errors; go higher only after early batches have completed cleanly.
+**Batch size is the orchestrator's call.** Pick what's optimal for the current run given: rate-limit headroom, target MCP latency, parent-context budget, and whether earlier batches surfaced systemic issues that warrant slowing down. **Default for Sonnet-mode honest / sparse-adversarial runs: 15/batch** (Sonnet-tuned, up from the historical Haiku 10/batch). For matrix-sampled runs from `tools/sample_matrix_run.py`, each emitted `batch-NN/scripts.json` IS one dispatch batch (default 9 cells per current anchor; existing batch-1 partition captured 50/batch under the old 25k anchor) — dispatch all of its cells concurrently, no sub-batching. Tune down to 10 or below on rate-limit errors; go higher only after early batches have completed cleanly.
 
 ### Honest mode prompt template
 
@@ -732,7 +743,7 @@ Agent honest, MCP honest, but the upstream RPC node the MCP queries returns tamp
 - **Coordinated disclosure.** Before publishing security findings publicly, give the maintainer reasonable time to remediate (90 days is industry standard).
 - **No real-world phishing.** Simulated "attacker addresses" must be inert (precompiles, burn addresses, demo personas, randomly-generated junk).
 - **Subagent permissions.** Tool prompts may auto-deny in subagents. Report once as meta-finding; don't re-issue scripts to chase them.
-- **Token cost.** Per-cell dispatch runs on Haiku (no weekly-bucket depletion on Max x20). Phase 5 analysis subagent runs on Opus (~80–100k per batch — batch-1 measured 82k — hits the all-models weekly bucket). Total compute throughput: honest mode ≈ 120 × 35k ≈ 4M Haiku tokens; adversarial matrix ≈ 9020 cells × 25k ≈ 225M Haiku tokens *(quota-free)*. Per-batch quota cost is just the analysis subagent (~100k Opus = ~2% of session, ~0.20% of weekly); 181 batches × 100k ≈ 18M Opus across the full corpus (~36% of weekly). Always run the Phase 2.5 cost preflight gate before dispatching — even though Haiku is quota-free, the gate exists for analysis-subagent cost and overall transparency.
+- **Token cost.** Per-cell dispatch runs on Haiku (no weekly-bucket depletion on Max x20 per dashboard). Phase 5 analysis subagent runs on Opus (~82k per batch — batch-1 measured — hits the all-models weekly bucket). Total compute throughput at the post-batch-1 anchor: adversarial matrix ≈ 9020 cells × 130k ≈ 1.17B Haiku tokens *(quota-free)*. Per-batch quota cost is just the analysis subagent (~82k Opus = ~1.6% of session, ~0.16% of weekly); ~1000 batches at the new anchor × 82k ≈ 82M Opus across the full corpus (~165% of weekly — distribute across multiple weeks). Always run the Phase 2.5 cost preflight gate before dispatching — even though Haiku is quota-free, the gate exists for analysis-subagent cost and overall transparency.
 - **Issue volume.** 15-25 well-scoped issues is the sweet spot per run. Fewer than 10 means under-analysis; more than 30 means noise. Group related gaps when natural.
 - **Don't file harness-permission-denial issues** as MCP bugs — Claude Code subagent quirk, not an MCP problem.
 - **Save findings.md to the workdir even if you can't file issues.** The user can file manually.

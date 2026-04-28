@@ -18,11 +18,13 @@ Sampling strategy:
   - Shuffle once with a fixed seed (default 42) — deterministic, reproducible.
   - Slice into batches of N cells, where
         N = floor(SESSION_ALL_MODELS × BATCH_SESSION_FRACTION / TOKENS_PER_CELL)
-    Defaults: 5M × 0.25 / 25k = 50 cells/batch → 181 batches total for 9020 cells.
-    (Per-cell anchor 25k = measured Haiku adversarial average; the old 50k
-    Sonnet-era anchor over-estimated per-cell cost 2x, so a 25%-of-session
-    target with realistic Haiku numbers gives the same 50 cells/batch the
-    Sonnet-era 50%-of-session target gave.)
+    Defaults (post batch-1 recalibration): 5M × 0.25 / 130k ≈ 9 cells/batch
+    for new partitions. Existing partition.json captured at init time keeps
+    its old anchor and batch_size — change applies only on re-init. Note:
+    Haiku is quota-free per the user's Max-x20 dashboard observation, so the
+    "session fraction" is a parent-context / pacing heuristic rather than an
+    actual quota constraint. The only quota-relevant per-batch cost is the
+    Phase 5 Opus analysis subagent (~82k = ~1.6%% of session, ~0.16%% of weekly).
   - Each batch is non-overlapping; cumulatively they cover every cell exactly once.
 
 Subcommands:
@@ -70,12 +72,12 @@ PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 # if these don't match what you see on https://console.anthropic.com .
 DEFAULT_ALL_MODELS_WEEKLY = 50_000_000  # placeholder; verify against dashboard
 DEFAULT_SESSION_ALL_MODELS = 5_000_000  # placeholder 5-hour rolling window cap
-DEFAULT_TOKENS_PER_CELL = 25_000        # measured Haiku adversarial-cell average from batch-1; quota-free
-                                        # (was 50k Sonnet-era ceiling — kept the
-                                        # old number through the Sonnet→Haiku
-                                        # switch by accident; batch-size math used
-                                        # 2x the real cost until Phase D)
-DEFAULT_ANALYSIS_TOKENS = 100_000       # one Opus analysis subagent per batch (actual batch-1: ~82k; rounded up for headroom)
+DEFAULT_TOKENS_PER_CELL = 130_000       # measured Haiku adversarial-cell average across batch-1's 50 subagents (range ~125-155k); quota-free per dashboard
+                                        # Earlier 25k anchor was from a smaller-corpus
+                                        # honest-mode pre-14-role measurement; 14-role
+                                        # adversarial cells with full preflight + MCP
+                                        # tool calls measure ~5x higher.
+DEFAULT_ANALYSIS_TOKENS = 82_000        # measured Phase 5 Opus analysis run on batch-1 (was 100k anchor; now using observed)
 DEFAULT_BATCH_SESSION_FRACTION = 0.25   # batch fills this much of one 5-hour session
                                         # (Phase D resample: tightened from 0.5
                                         # to give smaller, faster-to-analyze
@@ -231,6 +233,9 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
 
     batch_dir = f'{SAMPLE_DIR}/batch-{batch_n:02d}'
     os.makedirs(batch_dir, exist_ok=True)
+    # Pre-create transcripts/ so Phase 3 dispatch doesn't need a separate mkdir
+    # (which would prompt for permission in interactive harnesses).
+    os.makedirs(f'{batch_dir}/transcripts', exist_ok=True)
     scripts_path = f'{batch_dir}/scripts.json'
 
     out = {
@@ -419,13 +424,15 @@ def _parse_transcripts(transcripts_dir: str) -> list[dict]:
         text = open(os.path.join(transcripts_dir, fn)).read()
         rec = {'file': fn}
         for k in ('SCRIPT_ID', 'ROLE', 'ATTACK', 'CATEGORY', 'CHAIN', 'SCRIPT'):
+            # Try the strict line-start form first, then fall back to mid-line
+            # match — many transcripts format the header as one pipe-delimited
+            # line ("SCRIPT_ID: ... | CATEGORY: ... | CHAIN: ... | ROLE: ...")
+            # where only the first field is at line-start.
             m = re.search(rf'^{k}:\s*(.+)$', text, re.M)
+            if not m:
+                m = re.search(rf'\b{k}:\s*([^|\n]+)', text)
             if m:
                 val = m.group(1).strip()
-                # Skill template puts the header on one line as
-                # "SCRIPT_ID: ID | CATEGORY: ... | CHAIN: ... | SCRIPT: ..."
-                # — split on " | " for non-SCRIPT fields so we don't
-                # capture the trailing fields.
                 if k != 'SCRIPT' and ' | ' in val:
                     val = val.split(' | ')[0].strip()
                 rec[k.lower()] = val
@@ -444,6 +451,14 @@ def _parse_transcripts(transcripts_dir: str) -> list[dict]:
         rec['did_user_get_tricked_raw'] = m_tricked.group(1).strip() if m_tricked else ''
         rec['attack_attempted'] = m_attempt.group(1).strip() if m_attempt else ''
         rec['a5_attribution_raw'] = m_a5.group(1).strip() if m_a5 else ''
+
+        # Final fallback for role: the ADVERSARIAL_RESULT block always names
+        # the role on its own line (`role: A.4`). If the header parse missed,
+        # try to pull it from there.
+        if not rec.get('role'):
+            m_role_in_adv = re.search(r'\brole:\s*([^\n]+)', rec['adv'], re.I)
+            if m_role_in_adv:
+                rec['role'] = m_role_in_adv.group(1).strip()
 
         # Canonicalize for stable aggregation.
         rec['role'] = _canonicalize_role(rec.get('role', ''))
@@ -582,6 +597,136 @@ def cmd_mark_completed(args: argparse.Namespace) -> None:
                   f"have run.")
 
 
+def cmd_inspect_batch(args: argparse.Namespace) -> None:
+    """Show batch contents + dispatch progress in a compact form.
+
+    Replaces the ad-hoc ``python3 -c "import json; ..."`` pattern that the
+    orchestrator otherwise has to invoke (and the user has to approve
+    fresh each time) when preparing a Phase 3 dispatch."""
+    if not os.path.exists(PARTITION_PATH):
+        sys.exit("No partition yet. Run `init` first.")
+    partition = json.load(open(PARTITION_PATH))
+    matrix = json.load(open(MATRIX_PATH))
+    rows_by_key = {(r.get('audience', 'unknown'), r['id']): r
+                   for r in matrix['rows']}
+
+    batch_cells = next((b['cells'] for b in partition['batches']
+                        if b['batch'] == args.batch), None)
+    if not batch_cells:
+        sys.exit(f"Batch {args.batch} not in partition (have batches "
+                 f"1..{partition['total_batches']}).")
+
+    transcripts_dir = f'{SAMPLE_DIR}/batch-{args.batch:02d}/transcripts'
+    done_ids = set()
+    if os.path.isdir(transcripts_dir):
+        done_ids = {fn.replace('.txt', '')
+                    for fn in os.listdir(transcripts_dir)
+                    if fn.endswith('.txt')}
+
+    pending = []
+    role_counts: dict[str, int] = {}
+    for c in batch_cells:
+        cid = f"{c['audience']}-{c['row_id']}-{c['role']}"
+        role_counts[c['role']] = role_counts.get(c['role'], 0) + 1
+        if cid in done_ids:
+            continue
+        row = rows_by_key.get((c['audience'], c['row_id']), {})
+        pending.append({
+            'id': cid,
+            'role': c['role'],
+            'category': row.get('category', '?'),
+            'chain': row.get('chain') or 'n/a',
+            'script': (row.get('script') or '')[:args.script_chars],
+        })
+
+    print(f"Batch {args.batch}: {len(batch_cells)} cells total, "
+          f"{len(done_ids)} done, {len(pending)} pending")
+    role_summary = ', '.join(f"{r}: {n}"
+                             for r, n in sorted(role_counts.items()))
+    print(f"  roles: {role_summary}")
+    out_of_scope = role_counts.get('A.5', 0) + role_counts.get('C.5', 0)
+    control = role_counts.get('E', 0)
+    if out_of_scope:
+        print(f"  ⚠ {out_of_scope} A.5/C.5 cells (advisory-only — OUT OF SCOPE; "
+              f"§7 upstream-escalation, NOT issues.draft.json)")
+    if control:
+        print(f"  ℹ {control} E (control) cells (any defense firing → false-positive)")
+    if not pending:
+        print("\nAll cells transcribed. Next: `mark-completed --batch "
+              f"{args.batch}` to auto-aggregate + Phase 5.")
+        return
+    print(f"\nPending cells (id|role|category|chain|script[:{args.script_chars}]):")
+    for c in pending:
+        print(f"  {c['id']}|{c['role']}|{c['category']}|{c['chain']}|{c['script']}")
+
+
+def cmd_verify_transcripts(args: argparse.Namespace) -> None:
+    """Verify each batch transcript has the [ADVERSARIAL_RESULT] header that
+    the aggregator parser anchors on. With ``--repair``, insert the header
+    above the first ``role:`` line; for transcripts with no structured
+    fields, append a synthesized control-style block.
+
+    Replaces the ad-hoc Python patches the orchestrator otherwise has to
+    invoke during the Phase 3 → Phase 4 handoff."""
+    transcripts_dir = (args.transcripts or
+                       f'{SAMPLE_DIR}/batch-{args.batch:02d}/transcripts')
+    if not os.path.isdir(transcripts_dir):
+        sys.exit(f"transcripts dir not found: {transcripts_dir}")
+
+    files = sorted(fn for fn in os.listdir(transcripts_dir)
+                   if fn.endswith('.txt'))
+    ok, patched, synthesized, failed = [], [], [], []
+    for fn in files:
+        path = os.path.join(transcripts_dir, fn)
+        text = open(path).read()
+        if '[ADVERSARIAL_RESULT]' in text:
+            ok.append(fn)
+            continue
+        if not args.repair:
+            failed.append(fn)
+            continue
+        # Try strict line-start `role:`, then indented form, then fallback.
+        m = re.search(r'^(\s*)(role:\s*[A-F]\.?[1-5]?\b.*$)', text, re.M | re.I)
+        if m:
+            insert_at = m.start(2)
+            new_text = text[:insert_at] + '[ADVERSARIAL_RESULT]\n' + text[insert_at:]
+            open(path, 'w').write(new_text)
+            patched.append(fn)
+            continue
+        # No structured role: line. Synthesize a minimal block from filename.
+        cell_id = fn[:-4]
+        role_match = re.search(r'-(A\.[1-5]|B|C\.[1-5]|D|E|F)$', cell_id)
+        role = role_match.group(1) if role_match else 'unknown'
+        synth_block = (
+            f'\n[ADVERSARIAL_RESULT]\n'
+            f'role: {role}\n'
+            f'a5_attribution: n/a\n'
+            f'attack_attempted: synthesized — original transcript was narrative-only\n'
+            f'defense_layer: unknown\n'
+            f'did_user_get_tricked: n/a\n'
+            f'notes: synthesized block (transcript lacked strict-format section). '
+            f'Inspect the file body for actual content.\n'
+        )
+        open(path, 'w').write(text.rstrip() + synth_block)
+        synthesized.append(fn)
+
+    print(f"Verified {len(files)} transcripts in {transcripts_dir}")
+    print(f"  ok:           {len(ok)}")
+    if patched:
+        print(f"  patched:      {len(patched)} (inserted [ADVERSARIAL_RESULT] above role: line)")
+        for fn in patched:
+            print(f"    - {fn}")
+    if synthesized:
+        print(f"  synthesized:  {len(synthesized)} (no role: line found; minimal block appended)")
+        for fn in synthesized:
+            print(f"    - {fn}")
+    if failed:
+        print(f"  ⚠ missing header (use --repair to fix): {len(failed)}")
+        for fn in failed:
+            print(f"    - {fn}")
+        sys.exit(1)
+
+
 def cmd_status(args: argparse.Namespace) -> None:
     if not os.path.exists(PROGRESS_PATH):
         sys.exit("No partition yet. Run `init` first.")
@@ -618,11 +763,11 @@ def main() -> None:
                         help='5-hour all-models cap in tokens (default: 5M; tune to plan)')
     p_init.add_argument('--per-cell', dest='per_cell',
                         type=int, default=DEFAULT_TOKENS_PER_CELL,
-                        help='Tokens per cell estimate (default: 25k Haiku-measured)')
+                        help='Tokens per cell estimate (default: 130k — batch-1 measured)')
     p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
                         type=int, default=DEFAULT_ANALYSIS_TOKENS,
                         help='Phase 5 analysis subagent token estimate '
-                             '(default: 250k; runs on Opus)')
+                             '(default: 82k — batch-1 measured; runs on Opus)')
     p_init.add_argument('--batch-size', dest='batch_size',
                         type=int, default=None,
                         help='Concurrent subagents per batch '
@@ -650,6 +795,23 @@ def main() -> None:
     p_agg.add_argument('--transcripts', help='Path to transcripts dir '
                                              '(default: runs/matrix-sampled/batch-NN/transcripts).')
     p_agg.set_defaults(func=cmd_aggregate_batch)
+
+    p_inspect = sub.add_parser('inspect-batch',
+                               help='Compact view of a batch + which cells '
+                                    'still need transcripts.')
+    p_inspect.add_argument('--batch', type=int, required=True)
+    p_inspect.add_argument('--script-chars', type=int, default=80,
+                           help='Truncate script preview at N chars (default: 80)')
+    p_inspect.set_defaults(func=cmd_inspect_batch)
+
+    p_verify = sub.add_parser('verify-transcripts',
+                              help='Check transcripts have [ADVERSARIAL_RESULT] '
+                                   'header; --repair inserts it.')
+    p_verify.add_argument('--batch', type=int, required=True)
+    p_verify.add_argument('--transcripts', help='Override transcripts dir path.')
+    p_verify.add_argument('--repair', action='store_true',
+                          help='Patch missing headers in place.')
+    p_verify.set_defaults(func=cmd_verify_transcripts)
 
     p_stat = sub.add_parser('status', help='Show progress.')
     p_stat.add_argument('-v', '--verbose', action='store_true',
