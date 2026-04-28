@@ -31,7 +31,7 @@ Comprehensive end-user simulation of any MCP server. Same 6-phase pipeline, two 
 5. **Analyze** via a fresh subagent → `findings.md`
 6. **File** GitHub issues for each distinct finding, plus a tracker
 
-Phases 1, 4, 6 are mode-independent. Phase 2 (script catalog), Phase 3 (subagent prompt), and Phase 5 (analysis lens) branch by mode. Phase 2.5 is mandatory regardless of mode — never dispatch without explicit user confirmation of the cost estimate.
+Phases 1, 4, 6 are mode-independent. Phase 2 (script catalog), Phase 3 (subagent prompt), and Phase 5 (analysis lens) branch by mode. **Phase 2.5 is mandatory regardless of mode AND fires on every batch — never dispatch any batch (first or Nth) without re-surfacing the cost preflight block and getting a fresh explicit user OK for that specific batch. A user "go" on batch N does NOT authorize batch N+1.**
 
 ---
 
@@ -114,9 +114,13 @@ For crypto MCPs, label 4 personas (Alice/Bob/Carol/Dave) onto demo wallets so sc
 
 ---
 
-## Phase 2.5 — Cost preflight (mandatory)
+## Phase 2.5 — Cost preflight (mandatory, per-batch)
 
-**Before any Phase 3 dispatch, surface a budget estimate and explicitly ask the user to confirm.** Do not start the run as soon as the user names parameters — even when the request is unambiguous (e.g. "run adversarial on `expert-matrix.json` in batches of 10"). Smoke tests routinely consume a meaningful chunk of weekly Sonnet quota; the user should opt in with eyes open.
+**Before EVERY Phase 3 batch dispatch — every single one, not just the first — surface the cost preflight block AND wait for an explicit user OK on that specific batch.** A user "go" on batch N does NOT authorize batch N+1; each batch's role distribution and out-of-scope share differ even when the partition is unchanged, so the user must re-confirm with eyes on the actual numbers for that batch.
+
+The `next-batch` subcommand prints the block as a side-effect of writing `scripts.json`. **Printing is not confirmation.** The orchestrator MUST pause after `next-batch` and explicitly ask the user before any Agent dispatch.
+
+Smoke tests routinely consume a meaningful chunk of weekly Sonnet quota; the user should opt in with eyes open, every time.
 
 ### What to compute
 
@@ -168,7 +172,9 @@ Surface this estimate to the user before dispatching, in roughly this shape:
 
 ### When to recompute
 
-Recompute and re-prompt if the user changes any of:
+**Recompute and re-prompt for every batch — period.** The per-batch numbers (role distribution, A.5/C.5 out-of-scope share, E control share, cell count) differ from batch to batch even when the partition is unchanged; that variation is information the user needs.
+
+Additionally re-prompt if the user changes any of:
 - Vector file (sparse → matrix can 4–6× the cost).
 - Mode (honest vs adversarial).
 - Whether to also run the Phase 5 analysis subagent in the same session.
