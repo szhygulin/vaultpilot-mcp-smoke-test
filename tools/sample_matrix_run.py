@@ -56,6 +56,7 @@ PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 # if the user's plan / model behavior changes.
 DEFAULT_SONNET_WEEKLY = 30_000_000
 DEFAULT_ALL_MODELS_WEEKLY = 50_000_000
+DEFAULT_SESSION_ALL_MODELS = 50_000_000  # 5-hour window all-models cap; placeholder
 DEFAULT_FRACTION = 0.9
 DEFAULT_TOKENS_PER_CELL = 50_000
 DEFAULT_ANALYSIS_TOKENS = 250_000
@@ -109,6 +110,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         'budget_constraint': {
             'sonnet_weekly_tokens': args.sonnet_weekly,
             'all_models_weekly_tokens': args.all_models_weekly,
+            'session_all_models_tokens': args.session_all_models,
             'budget_fraction': args.fraction,
             'tokens_per_cell': args.per_cell,
             'analysis_tokens': args.analysis_tokens,
@@ -144,19 +146,24 @@ def cmd_init(args: argparse.Namespace) -> None:
     week_total = week_dispatch + args.analysis_tokens
     pct_sonnet = week_total / args.sonnet_weekly * 100
     pct_all = week_total / args.all_models_weekly * 100
+    per_batch_tokens = args.batch_size * args.per_cell
+    pct_batch_session = per_batch_tokens / args.session_all_models * 100
+    pct_run_session = week_total / args.session_all_models * 100
 
     print(f"wrote {PARTITION_PATH}")
-    print(f"  total cells:           {partition['total_cells']}")
-    print(f"  cells/week:            {partition['cells_per_week']}")
-    print(f"  total weeks:           {partition['total_weeks']}")
-    print(f"  est. tokens/week:      ~{week_total / 1e6:.1f}M "
+    print(f"  total cells:              {partition['total_cells']}")
+    print(f"  cells/week:               {partition['cells_per_week']}")
+    print(f"  total weeks:              {partition['total_weeks']}")
+    print(f"  est. tokens/week:         ~{week_total / 1e6:.1f}M "
           f"(~{week_dispatch / 1e6:.1f}M dispatch + ~{args.analysis_tokens / 1e6:.2f}M analysis)")
-    print(f"  Sonnet weekly anchor:  ~{args.sonnet_weekly / 1e6:.0f}M  "
+    print(f"  Sonnet weekly anchor:     ~{args.sonnet_weekly / 1e6:.0f}M  "
           f"→ each week ≈ {pct_sonnet:.0f}% of bucket")
-    print(f"  All-models anchor:     ~{args.all_models_weekly / 1e6:.0f}M  "
+    print(f"  All-models weekly anchor: ~{args.all_models_weekly / 1e6:.0f}M  "
           f"→ each week ≈ {pct_all:.0f}% of bucket")
-    print(f"  batch size:            {partition['batch_size']}")
-    print(f"  seed:                  {partition['seed']}")
+    print(f"  Session 5-hr anchor:      ~{args.session_all_models / 1e6:.0f}M  "
+          f"→ per batch ≈ {pct_batch_session:.0f}%, full weekly run ≈ {pct_run_session:.0f}%")
+    print(f"  batch size:               {partition['batch_size']}")
+    print(f"  seed:                     {partition['seed']}")
 
 
 def cmd_next_week(args: argparse.Namespace) -> None:
@@ -236,11 +243,17 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     analysis_tokens = bc.get('analysis_tokens', DEFAULT_ANALYSIS_TOKENS)
     sonnet_weekly = bc['sonnet_weekly_tokens']
     all_models_weekly = bc.get('all_models_weekly_tokens', DEFAULT_ALL_MODELS_WEEKLY)
+    session_all_models = bc.get('session_all_models_tokens', DEFAULT_SESSION_ALL_MODELS)
+    batch_size = partition['batch_size']
 
     dispatch_tokens = len(hydrated) * per_cell
     total_tokens = dispatch_tokens + analysis_tokens
-    pct_sonnet = total_tokens / sonnet_weekly * 100
-    pct_all = total_tokens / all_models_weekly * 100
+    per_batch_tokens = batch_size * per_cell
+
+    pct_sonnet_weekly = total_tokens / sonnet_weekly * 100
+    pct_all_weekly = total_tokens / all_models_weekly * 100
+    pct_batch_session = per_batch_tokens / session_all_models * 100
+    pct_run_session = total_tokens / session_all_models * 100
 
     print(f"wrote {scripts_path}")
     print()
@@ -250,19 +263,31 @@ def cmd_next_week(args: argparse.Namespace) -> None:
     print()
     print(f"By matrix:  {matrix_counts}")
     print(f"By role:    {role_counts}")
-    print(f"Batch size: {partition['batch_size']} concurrent / batch")
+    print(f"Batch size: {batch_size} concurrent / batch "
+          f"(~{per_batch_tokens / 1e6:.2f}M tokens per batch)")
     print()
     print(f"Estimated total token cost: ~{total_tokens / 1e6:.1f}M tokens "
           f"(~{dispatch_tokens / 1e6:.1f}M dispatch + ~{analysis_tokens / 1e6:.2f}M analysis)")
     print()
-    print(f"Ballpark vs Max x20 weekly tiers:")
-    print(f"  Sonnet-only bucket: ~{pct_sonnet:.0f}% of weekly "
+    print(f"Weekly tiers (cumulative across the week):")
+    print(f"  Sonnet-only bucket: ~{pct_sonnet_weekly:.0f}% of weekly "
           f"(anchor ~{sonnet_weekly / 1e6:.0f}M)")
-    print(f"  All-models bucket:  ~{pct_all:.0f}% of weekly "
+    print(f"  All-models bucket:  ~{pct_all_weekly:.0f}% of weekly "
           f"(anchor ~{all_models_weekly / 1e6:.0f}M)")
     print()
+    print(f"Per-session check (5-hour rolling window, all-models):")
+    print(f"  One batch:        ~{pct_batch_session:.0f}% of session "
+          f"(~{per_batch_tokens / 1e6:.2f}M / anchor ~{session_all_models / 1e6:.0f}M)")
+    print(f"  Full weekly run:  ~{pct_run_session:.0f}% of session "
+          f"(~{total_tokens / 1e6:.1f}M / anchor ~{session_all_models / 1e6:.0f}M)")
+    if pct_run_session > 100:
+        print(f"  ⚠ weekly run > one session — dispatch will straddle ≥2 "
+              f"5-hour windows; that's fine, just expect rate-limit pauses "
+              f"between them.")
+    print()
     print(f"These are rough estimates — verify on your account dashboard "
-          f"for exact numbers.")
+          f"for exact numbers. Override anchors via `init --sonnet-weekly`, "
+          f"`--all-models-weekly`, `--session-all-models`.")
     print()
     print(f"Next: orchestrator should ask the user to confirm before "
           f"dispatching, then run Phase 3 over {scripts_path} "
@@ -319,6 +344,9 @@ def main() -> None:
     p_init.add_argument('--all-models-weekly', dest='all_models_weekly',
                         type=int, default=DEFAULT_ALL_MODELS_WEEKLY,
                         help='All-models weekly budget in tokens (default: 50M)')
+    p_init.add_argument('--session-all-models', dest='session_all_models',
+                        type=int, default=DEFAULT_SESSION_ALL_MODELS,
+                        help='5-hour-window all-models cap in tokens (default: 50M placeholder; tune to actual plan)')
     p_init.add_argument('--analysis-tokens', dest='analysis_tokens',
                         type=int, default=DEFAULT_ANALYSIS_TOKENS,
                         help='Phase 5 analysis subagent token estimate (default: 250k)')
