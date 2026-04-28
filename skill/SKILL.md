@@ -157,18 +157,32 @@ If the user accepts: proceed to Phase 3. If the user wants to scale down (e.g. "
 
 ### When the matrix exceeds session / weekly budget
 
-If the planned run is over the user's available weekly Sonnet or 5-hour all-models capacity, propose **partitioning into batches** rather than scaling down or proceeding-with-overage. Use `tools/sample_matrix_run.py`:
+If the planned run is over the user's available weekly Sonnet or 5-hour all-models capacity, propose **partitioning into batches** rather than scaling down or proceeding-with-overage. Use `tools/sample_matrix_run.py` and run the per-batch loop:
 
 ```bash
-python3 tools/sample_matrix_run.py init             # one-time, deterministic seed
-python3 tools/sample_matrix_run.py next-batch       # writes runs/matrix-sampled/batch-NN/scripts.json
-# … dispatch this batch's scripts.json via Phase 3 …
-python3 tools/sample_matrix_run.py mark-completed --batch NN
+python3 tools/sample_matrix_run.py init                 # one-time, deterministic seed
+python3 tools/sample_matrix_run.py next-batch           # cost preflight + writes batch-NN/scripts.json
+# … 1. dispatch (Phase 3) over batch-NN/scripts.json …
+python3 tools/sample_matrix_run.py mark-completed --batch NN   # 2. auto-aggregates transcripts
+# … 3. orchestrator delegates analysis subagent → batch-NN/findings.md …
+# … 4. orchestrator drafts issues from findings → files via gh, records in batch-NN/issues.md …
 ```
 
 The tool flattens both matrices, shuffles once with a fixed seed, and slices into fixed-size batches sized to fill ~50% of one 5-hour all-models session (default 50 cells / ~2.5M tokens per batch → 23 batches for the full 1110-cell matrix). The user decides how many batches to dispatch per week / per session — the tool just hands them the next pending batch and counts overall progress.
 
 Each batch's `scripts.json` is in the same shape Phase 3 dispatches consume, with `role` and `attack` already inlined per cell. Dispatch all cells in the batch concurrently (the batch IS the dispatch unit) — no further per-batch sub-batching needed.
+
+### Per-batch feedback loop (mandatory after each batch dispatch)
+
+After dispatch finishes for a batch, run `mark-completed --batch N`. That auto-runs the **quick aggregate** (step 2 below). The orchestrator then runs steps 3 and 4 before moving on:
+
+1. **Dispatch** (Phase 3) — handled above.
+2. **Auto-aggregate** — `mark-completed` runs this for you. Parses `batch-NN/transcripts/*.txt` → writes `batch-NN/summary.txt` and `batch-NN/aggregate.json`. Surfaces structural counts: by role, by defense layer (which invariant caught the attack, or `none`), and `did_user_get_tricked` (yes/no/n/a). The "tricked: yes" SCRIPT_IDs are flagged in the console output — those are the urgent ones.
+3. **Per-batch findings.md** — orchestrator delegates a fresh analysis subagent (`model: "sonnet"`) over `batch-NN/summary.txt`. Use the canonical Phase 5 analysis prompt, scoped to "this batch's 50 cells". Persist the subagent's reply as `batch-NN/findings.md`. A 50-cell sample is small for full pattern recognition — this analysis is intentionally scoped to "what's surfacing in *this* batch" rather than a corpus-wide assessment.
+4. **File issues from this batch's findings** — read `batch-NN/findings.md`, draft GitHub issues for each distinct finding (skill, intent-layer gaps, on-device blind-sign risks, MCP bugs surfaced). File via `gh issue create` per Phase 6 conventions; record the resulting URLs in `batch-NN/issues.md`. Confirm with the user before bulk-filing — first issue surface, ask approval, then proceed.
+5. **(Optional) Cumulative analysis** — once enough batches have run that cross-batch patterns matter, run a full Phase 5 analysis over the union of all `batch-NN/summary.txt` files. This is the existing "findings.md across the run" lens. Skip by default; run it explicitly when the user asks for a cross-batch synthesis.
+
+Why per-batch instead of one final cumulative analysis: matrix runs span weeks, and waiting until the end to surface findings means defense gaps stay open while the user is still dispatching against them. Per-batch analysis lets the user catch a systemic failure on batch 2 and stop dispatching the remaining 21 batches against a broken defense.
 
 ---
 

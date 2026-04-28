@@ -38,8 +38,10 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import time
+from collections import Counter
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPERT_PATH = f'{REPO}/test-vectors/expert-matrix.json'
@@ -267,6 +269,119 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
           f"over {scripts_path}, then `mark-completed --batch {batch_n}`.")
 
 
+def _parse_transcripts(transcripts_dir: str) -> list[dict]:
+    """Parse adversarial transcripts -> structured records (mirrors
+    tools/parse_summary_adversarial.py)."""
+    records = []
+    for fn in sorted(os.listdir(transcripts_dir)):
+        if not fn.endswith('.txt'):
+            continue
+        text = open(os.path.join(transcripts_dir, fn)).read()
+        rec = {'file': fn}
+        for k in ('SCRIPT_ID', 'ROLE', 'ATTACK', 'CATEGORY', 'CHAIN', 'SCRIPT'):
+            m = re.search(rf'^{k}:\s*(.+)$', text, re.M)
+            if m:
+                val = m.group(1).strip()
+                # Skill template puts the header on one line as
+                # "SCRIPT_ID: ID | CATEGORY: ... | CHAIN: ... | SCRIPT: ..."
+                # — split on " | " for non-SCRIPT fields so we don't
+                # capture the trailing fields.
+                if k != 'SCRIPT' and ' | ' in val:
+                    val = val.split(' | ')[0].strip()
+                rec[k.lower()] = val
+        m = re.search(r'\[OUTCOME\](.*?)(?=\[OBSERVATIONS\]|\[ADVERSARIAL_RESULT\]|\Z)',
+                      text, re.S)
+        rec['outcome'] = (m.group(1).strip() if m else '').replace('\n', ' ')[:300]
+        m = re.search(r'\[ADVERSARIAL_RESULT\](.*?)(?=={3,}|\Z)', text, re.S)
+        rec['adv'] = (m.group(1).strip() if m else '')[:1500]
+        # Extract structured fields from inside the ADVERSARIAL_RESULT block.
+        m_def = re.search(r'defense[_ ]layer[_a-z ]*:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
+        m_tricked = re.search(r'did[_ ]user[_ ]get[_ ]tricked:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
+        m_attempt = re.search(r'attack[_ ]attempted:\s*(.+?)(?:\n|$)', rec['adv'], re.I)
+        rec['defense_layer'] = m_def.group(1).strip() if m_def else 'unknown'
+        rec['did_user_get_tricked'] = m_tricked.group(1).strip().lower() if m_tricked else 'unknown'
+        rec['attack_attempted'] = m_attempt.group(1).strip() if m_attempt else ''
+        records.append(rec)
+    return records
+
+
+def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
+                    quiet: bool = False) -> dict | None:
+    """Run the quick aggregate over a batch's transcripts. Writes
+    summary.txt + aggregate.json under runs/matrix-sampled/batch-NN/.
+    Returns the aggregate dict, or None if no transcripts found."""
+    batch_dir = f'{SAMPLE_DIR}/batch-{batch_n:02d}'
+    if transcripts_dir is None:
+        transcripts_dir = f'{batch_dir}/transcripts'
+    if not os.path.isdir(transcripts_dir):
+        if not quiet:
+            print(f"  (transcripts dir {transcripts_dir} not found — "
+                  f"skipping aggregate)")
+        return None
+
+    records = _parse_transcripts(transcripts_dir)
+    if not records:
+        if not quiet:
+            print(f"  (no transcripts in {transcripts_dir} — skipping aggregate)")
+        return None
+
+    summary_path = f'{batch_dir}/summary.txt'
+    with open(summary_path, 'w') as o:
+        for r in records:
+            sid = r.get('script_id', r['file'].replace('.txt', ''))
+            role = r.get('role', '?')
+            o.write(f"=== {sid} | role:{role} | {r.get('category','?')} ===\n")
+            if 'script' in r:
+                o.write(f"SCRIPT: {r['script'][:200]}\n")
+            if 'attack' in r:
+                o.write(f"ATTACK: {r['attack'][:200]}\n")
+            if r.get('outcome'):
+                o.write(f"OUTCOME: {r['outcome']}\n")
+            o.write(f"ADVERSARIAL_RESULT:\n{r['adv'][:1500]}\n\n")
+
+    by_layer = Counter(r['defense_layer'] for r in records)
+    by_tricked = Counter(r['did_user_get_tricked'] for r in records)
+    by_role = Counter(r.get('role', '?') for r in records)
+    tricked = by_tricked.get('yes', 0)
+
+    aggregate = {
+        'batch': batch_n,
+        'total_transcripts': len(records),
+        'by_defense_layer': dict(by_layer),
+        'by_did_user_get_tricked': dict(by_tricked),
+        'by_role': dict(by_role),
+        'tricked_count': tricked,
+        'tricked_script_ids': [r.get('script_id', r['file'].replace('.txt', ''))
+                               for r in records
+                               if r['did_user_get_tricked'] == 'yes'],
+    }
+    aggregate_path = f'{batch_dir}/aggregate.json'
+    with open(aggregate_path, 'w') as f:
+        json.dump(aggregate, f, indent=2)
+
+    if not quiet:
+        print(f"  wrote {summary_path}")
+        print(f"  wrote {aggregate_path}")
+        print(f"  transcripts:          {len(records)}")
+        print(f"  by role:              {dict(by_role)}")
+        print(f"  by defense layer:     {dict(by_layer)}")
+        print(f"  did_user_get_tricked: {dict(by_tricked)}")
+        if tricked:
+            print(f"  ⚠ {tricked} transcripts where user got tricked: "
+                  f"{aggregate['tricked_script_ids'][:5]}"
+                  f"{'...' if tricked > 5 else ''}")
+    return aggregate
+
+
+def cmd_aggregate_batch(args: argparse.Namespace) -> None:
+    """Standalone aggregate command — useful if mark-completed was called
+    before transcripts landed, or to re-aggregate after fixing transcripts."""
+    print(f"Aggregating batch {args.batch}...")
+    agg = _aggregate_batch(args.batch, transcripts_dir=args.transcripts)
+    if agg is None:
+        sys.exit(1)
+
+
 def cmd_mark_completed(args: argparse.Namespace) -> None:
     if not os.path.exists(PROGRESS_PATH):
         sys.exit("No partition yet. Run `init` first.")
@@ -283,6 +398,21 @@ def cmd_mark_completed(args: argparse.Namespace) -> None:
     with open(PROGRESS_PATH, 'w') as f:
         json.dump(progress, f, indent=2)
     print(f"batch {args.batch} marked completed at {batch['completed_at']}")
+
+    if not args.skip_aggregate:
+        print()
+        print(f"Auto-aggregating batch {args.batch}...")
+        agg = _aggregate_batch(args.batch, transcripts_dir=args.transcripts)
+        if agg is not None:
+            batch_dir = f'{SAMPLE_DIR}/batch-{args.batch:02d}'
+            print()
+            print(f"Next steps (orchestrator):")
+            print(f"  1. Per-batch findings: delegate analysis subagent over")
+            print(f"     {batch_dir}/summary.txt → write {batch_dir}/findings.md")
+            print(f"  2. File issues: draft GitHub issues from findings.md and")
+            print(f"     file via gh; record URLs in {batch_dir}/issues.md")
+            print(f"  3. (Optional) cumulative analysis once enough batches "
+                  f"have run.")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -337,10 +467,21 @@ def main() -> None:
                             help='Print and persist next pending batch.')
     p_next.set_defaults(func=cmd_next_batch)
 
-    p_mark = sub.add_parser('mark-completed', help='Mark a batch as run.')
+    p_mark = sub.add_parser('mark-completed',
+                            help='Mark a batch as run; auto-aggregates transcripts.')
     p_mark.add_argument('--batch', type=int, required=True)
-    p_mark.add_argument('--transcripts', help='Path to transcripts dir.')
+    p_mark.add_argument('--transcripts', help='Path to transcripts dir '
+                                              '(default: runs/matrix-sampled/batch-NN/transcripts).')
+    p_mark.add_argument('--skip-aggregate', action='store_true',
+                        help="Don't auto-run the aggregate step.")
     p_mark.set_defaults(func=cmd_mark_completed)
+
+    p_agg = sub.add_parser('aggregate-batch',
+                           help='Re-run the quick aggregate over a batch.')
+    p_agg.add_argument('--batch', type=int, required=True)
+    p_agg.add_argument('--transcripts', help='Path to transcripts dir '
+                                             '(default: runs/matrix-sampled/batch-NN/transcripts).')
+    p_agg.set_defaults(func=cmd_aggregate_batch)
 
     p_stat = sub.add_parser('status', help='Show progress.')
     p_stat.add_argument('-v', '--verbose', action='store_true',
