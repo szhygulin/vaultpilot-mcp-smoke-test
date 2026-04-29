@@ -1,0 +1,29 @@
+{
+  "batch": 99,
+  "source_attribution": "Synthetic test fixture for tests/suites/70-file-batch-issues.sh.",
+  "issues": [
+    {
+      "title": "Synth issue #1: missing intent-layer refusal on prepare_custom_call",
+      "labels": ["security_finding", "skill_finding"],
+      "attribution": "mcp-defect",
+      "summary": "First synthetic finding. MCP-defect attribution.",
+      "repro": "Scripts: synth-001, synth-002.",
+      "suggested_fix": "Add an intent-layer rule to refuse drainer-shaped messages."
+    },
+    {
+      "title": "Synth issue #2: typosquat URL emitted in advisory output",
+      "labels": ["security_finding"],
+      "attribution": "advisory-injection-shaped",
+      "summary": "Second synthetic finding. Advisory injection-shaped attribution.",
+      "repro": "Scripts: synth-003.",
+      "suggested_fix": "Push for chat-client output filter."
+    },
+    {
+      "title": "Synth issue #3: legacy draft with no attribution field",
+      "labels": ["bug_report"],
+      "summary": "Third synthetic finding. Missing attribution — back-compat case.",
+      "repro": "Scripts: synth-004.",
+      "suggested_fix": "None — this entry tests fallback behavior."
+    }
+  ]
+}
