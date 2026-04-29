@@ -686,7 +686,7 @@ The agent emits a wrong tool-call or wrong prose **without** the MCP being compr
 
 - **A.4 — Prompt-context confusion.** Agent's tool-fill is redirected by misleading text in the user prompt, conversation history, or retrieved document — typo'd contact name, ambiguous reference resolved silently, urgency framing, false premise ("you said this was safe"), gaslight ("the address I just gave you was wrong, use this one"). **In scope.** Tractable: invariants apply at the bytes level regardless of the surrounding narrative; contact decoration re-derivation (Inv #7), message preview (Inv #8).
 
-- **A.5 — Advisory-text-only.** Harmful prose with no associated tool call — typosquat wallet/support URLs, fabricated "recovery service" contacts, counterfeit hardware-vendor recommendations, stale or wrong educational facts, "always blind-sign is fine" normalization. **OUT OF SCOPE for MCP+skill defect filing per issue #21.** Skill rules live in the agent's context and an agent following an injected (or hallucinated, or sycophantic) instruction can be told to ignore them — the architectural defense is upstream. Two upstream paths (analysis subagent attributes per finding):
+- **A.5 — Advisory-text-only.** Harmful prose with no associated tool call — typosquat wallet/support URLs, fabricated "recovery service" contacts, counterfeit hardware-vendor recommendations, stale or wrong educational facts, "always blind-sign is fine" normalization. **Routed to §7 upstream-escalation in `findings.md`, NOT to `issues.draft.json` filing — per issue #21.** Skill rules live in the agent's context and an agent following an injected (or hallucinated, or sycophantic) instruction can be told to ignore them — the architectural defense is upstream. **A.5 findings are still tracked and reported** (test scope is UX + correctness + security, not just security per CLAUDE.md); they just route to a different consumer than MCP/skill defects do. Two upstream paths (analysis subagent attributes per finding):
   - **A.5a — injection-shaped** (URL/payload smuggled in via prompt context, retrieved-doc payload). Escalate to chat-client output filter.
   - **A.5b — model-shaped** (hallucination, stale knowledge, sycophancy under user pressure, safety-tuning gap). Escalate to model-layer safety (Anthropic).
 
@@ -715,7 +715,7 @@ Both compromised, coordinating. Sub-typed C.1–C.5 mirroring A.1–A.5: the age
 - **C.2** — tool-selection collude. Agent picks attacker-favorable route; MCP serves matching legitimate-looking calldata. **In scope.**
 - **C.3** — set-level collude. Agent acts on planted row; MCP returns matching falsified set. **In scope.**
 - **C.4** — context-confusion collude. Agent follows false premise; MCP corroborates (returns spoofed contact decoration / typo-resolution). **In scope.**
-- **C.5** — advisory collude. Agent emits typosquat / scam recommendation; MCP returns spoofed protocol facts grounding the advice. **OUT OF SCOPE** — same A.5a/A.5b upstream attribution as A.5.
+- **C.5** — advisory collude. Agent emits typosquat / scam recommendation; MCP returns spoofed protocol facts grounding the advice. **Routed to §7 upstream-escalation** — same A.5a/A.5b upstream attribution as A.5; tracked, not silently dropped.
 
 #### Role D — Supply-chain tamper
 
