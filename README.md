@@ -43,22 +43,25 @@ Three catalogs ship in [`test-vectors/`](test-vectors/), each tested in producti
 
 Or generate your own — see `CLAUDE.md (Smoke-test methodology section)` Phase 2 for catalog targets.
 
-### 3. Set up a workdir
+### 3. Workdir is in-repo (don't create folders outside)
 
-```bash
-mkdir -p ~/dev/<your-target-mcp>-smoke-test/transcripts
-cd ~/dev/<your-target-mcp>-smoke-test
-cp <this-repo>/test-vectors/<your-vector>.json scripts.json
-```
-
-The skill expects this layout:
+All test artifacts live under `runs/matrix-sampled/batch-NN/` inside this repository — see CLAUDE.md *Test workdir stays inside this repo* rule. The `/run-batch` slash command and `tools/sample_matrix_run.py` create + populate that directory automatically; you don't need to set up a workdir manually.
 
 ```
-<workdir>/
-├── scripts.json
-├── transcripts/      ← subagent transcripts written here
-└── (later) all_transcripts.txt, summary.txt, findings.md
+runs/matrix-sampled/
+├── partition.json                    # the deterministic 181-batch plan (seed 42)
+├── progress.json                     # which batches are pending / in_progress / completed
+└── batch-NN/
+    ├── scripts.json                  # the 50 cells dispatched in this batch
+    ├── transcripts/{cell-id}.txt     # per-cell subagent reports
+    ├── summary.txt                   # structured per-script summary
+    ├── aggregate.json                # role / defense / tricked counters + parse_failures
+    ├── findings.md                   # Phase 5 markdown analysis
+    ├── issues.draft.json             # 5-8 fileable issues
+    └── issues.md                     # filing log with #NNN URLs
 ```
+
+(Earlier README walkthroughs pointed at `~/dev/<target-mcp>-smoke-test/` as the workdir — that pattern was for a portable methodology installed across multiple repos. Lane 2 of the 4-lane overhaul moved the methodology into CLAUDE.md, so workdir + methodology + artifacts are all versioned together in this single repo.)
 
 ### 4. Trigger the skill
 
