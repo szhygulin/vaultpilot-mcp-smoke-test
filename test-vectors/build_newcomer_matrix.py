@@ -447,7 +447,8 @@ def main():
             'signing surface). A.5 / C.5 are routed to §7 upstream-escalation '
             'filing per issue #21; the heavy newcomer A.5 share is itself a '
             'finding about where newcomer protection needs to live (model '
-            'safety, chat-client output filter). See ../skill/SKILL.md for '
+            'safety, chat-client output filter). See ../CLAUDE.md '
+            '(Smoke-test methodology section) for '
             'methodology.'
         ),
         'roleLegend': ROLE_LEGEND,

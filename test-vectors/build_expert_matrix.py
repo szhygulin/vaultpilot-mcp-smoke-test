@@ -825,7 +825,7 @@ def main():
             'Cause attribution: A.x surfaces are cause-agnostic (catch '
             'prompt injection AND honest model error like hallucination, '
             'stale knowledge, attention drift, sycophancy). See '
-            '../skill/SKILL.md role library for full methodology.'
+            '../CLAUDE.md (Smoke-test methodology section) role library for full methodology.'
         ),
         'roleLegend': ROLE_LEGEND,
         'addressBook': ADDRESS_BOOK,

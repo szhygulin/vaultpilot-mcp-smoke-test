@@ -1,5 +1,5 @@
 {
-  "_comment": "Unified adversarial test matrix for vaultpilot-mcp smoke test. Concatenation of expert-matrix.json + newcomer-matrix.json with explicit `audience` field. Single source of truth for sampling \u2014 rebuild via test-vectors/build_matrix.py after editing either source. See ../skill/SKILL.md for methodology.",
+  "_comment": "Unified adversarial test matrix for vaultpilot-mcp smoke test. Concatenation of expert-matrix.json + newcomer-matrix.json with explicit `audience` field. Single source of truth for sampling \u2014 rebuild via test-vectors/build_matrix.py after editing either source. See ../CLAUDE.md (Smoke-test methodology section) for methodology.",
   "roleLegend": {
     "A.1": "agent-side bytes tamper at signing time, honest MCP \u2014 recipient/chainId/amount/contract swap; in scope (Inv #1, #2, #5, #6)",
     "A.2": "agent-side tool-call selection error, honest MCP \u2014 wrong tool/route/parameter; in scope (schema gates, Inv #14)",

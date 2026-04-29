@@ -1,6 +1,6 @@
 # test-vectors
 
-Reusable test-vector files for the vaultpilot-mcp smoke-test methodology (see `../skill/SKILL.md`). Re-runs against future vaultpilot-mcp releases should consume these as inputs.
+Reusable test-vector files for the vaultpilot-mcp smoke-test methodology (see `../CLAUDE.md` *Smoke-test methodology* section). Re-runs against future vaultpilot-mcp releases should consume these as inputs.
 
 ## Files
 
@@ -125,7 +125,7 @@ For pure-info newcomer prompts ("What is bitcoin?"), the B/C cells model the **t
 
 ## Re-running
 
-The methodology in `../skill/SKILL.md` consumes these vectors at Phase 2 (script catalog):
+The methodology in `../CLAUDE.md` (*Smoke-test methodology* section) consumes these vectors at Phase 2 (script catalog):
 - For an honest-baseline run on expert-style prompts → `honest-baseline.json`.
 - For a sparse adversarial run reusing the historical 111-entry catalog → `adversarial.json`.
 - For a sparse newcomer adversarial run reusing the historical 220-entry catalog → `newcomer-adversarial.json`.
