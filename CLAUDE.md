@@ -13,6 +13,19 @@ When asked to "commit and push", interpret that as:
 
 If you're already sitting on `main` with local commits when this comes up, move them to a new branch before pushing — do not push `main` directly. Reset `main` to `origin/main` only after the new branch is in place and pushed.
 
+## Test workdir stays inside this repo
+
+When running a smoke-test batch, **all artifacts (`scripts.json`, `transcripts/`, `summary.txt`, `aggregate.json`, `findings.md`, `issues.draft.json`, `issues.md`) live under `runs/matrix-sampled/batch-NN/` inside this repository.** Do NOT create a workdir outside the repo (e.g. `~/dev/<target-mcp>-smoke-test/`) like the older `README.md` §3 walkthrough showed; that pattern was for a portable methodology installed across multiple repos, but this repo is single-purpose and the methodology + artifacts are versioned together here.
+
+Concretely:
+
+- `tools/sample_matrix_run.py next-batch` always writes to `runs/matrix-sampled/batch-NN/`. Don't override the path.
+- `/run-batch` slash command and `tools/post_batch_commit.sh` both assume in-repo paths.
+- The Lane 3 PreToolUse hook reads `runs/matrix-sampled/progress.json` (relative path); a workdir outside the repo would silently bypass it.
+- Committed artifacts (per batch) ship in this same repo as a feature branch + PR (`tools/post_batch_commit.sh` does that automatically).
+
+If you need a one-off / non-batch test that for some reason can't live under `runs/matrix-sampled/`, surface the reason to the user before creating any path outside the repo. The default is always: **stay inside this folder.**
+
 ## mcp-smoke-test methodology is binding
 
 The full methodology lives in this CLAUDE.md (see *Smoke-test methodology* section below — moved here from `skill/SKILL.md` in Lane 2 to eliminate skill-loading fragility). Every instruction in it is **mandatory**, not advisory. In particular:
