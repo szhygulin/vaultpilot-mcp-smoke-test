@@ -411,7 +411,7 @@ Simulate an end-user session of Claude Code with the <MCP-NAME> MCP installed
 [Optional: address-book stub or context the parent agent already established.]
 
 Apply <preflight skill / security skill> on signing flows. <No broadcast / no
-write ops>. STOP at first of: action fulfilled, clearly impossible, or 8
+write ops>. STOP at first of: action fulfilled, clearly impossible, or 20
 substantive tool calls.
 
 Write transcript to <workdir>/transcripts/{id}.txt:
@@ -477,9 +477,9 @@ The subagent must NOT actually broadcast a transaction, even simulated. The "att
 - Don't poll progress — the harness will notify on each completion.
 - Size each batch dynamically (see Phase 3 dispatch note). Adapt to live signal — rate-limit responses, parent-context pressure, and whether early transcripts indicate the prompt template needs adjustment before fanning out wider.
 
-### Why the 8-tool-call cap
+### Why the 20-tool-call cap
 
-Prevents runaway agents that loop on permission denials or under-specified prompts. 8 is enough to characterize the experience; more is diminishing returns.
+Prevents runaway agents that loop on permission denials or under-specified prompts. 20 is enough room for legitimate multi-tool flows (send / swap / stake / bridge sequences that need 10–15 substantive MCP calls) without letting a confused subagent spiral indefinitely. Earlier versions of this skill capped at 8, which was too tight: real flows like `prepare → preview → send → status` plus preflight checks plus a few balance / quote reads ran 9–11 calls in batch-03's `expert-003-E` cell. The 20-call ceiling is enforced by the dispatch prompt builder (`tools/build_dispatch_prompt.py`) — subagents are told to write the transcript and stop on call #20.
 
 ### No-broadcast / no-write rule (mandatory)
 

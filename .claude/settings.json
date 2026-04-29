@@ -25,11 +25,20 @@
       "Bash(python3 tools/sample_matrix_run.py *)",
       "Bash(python3 tools/file_batch_issues.py --batch * --repo szhygulin/vaultpilot-mcp *)",
       "Bash(python3 tools/file_batch_issues.py --batch * --repo szhygulin/vaultpilot-mcp)",
+      "Bash(python3 tools/build_dispatch_prompt.py *)",
       "Bash(python3 test-vectors/build_*matrix.py)",
       "Bash(python3 test-vectors/build_matrix.py)",
       "Bash(touch runs/matrix-sampled/batch-*/.preflight-confirmed)",
       "Bash(tools/post_batch_commit.sh *)",
-      "Bash(./tools/post_batch_commit.sh *)"
+      "Bash(./tools/post_batch_commit.sh *)",
+
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "Bash(find *)"
     ]
   }
 }
