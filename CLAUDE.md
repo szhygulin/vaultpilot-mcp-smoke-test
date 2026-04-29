@@ -22,3 +22,21 @@ When the `mcp-smoke-test` skill is loaded (it lives at `skill/SKILL.md` in this 
 - **Don't skip steps** in the 6-phase pipeline (Catalog → Generate → Cost preflight → Spawn → Concat → Analyze → File). Phases 1, 4, 6 are mode-independent; Phases 2, 3, 5 branch by mode (honest vs. adversarial). Cost preflight (2.5) is mandatory in both modes.
 - **A.5 / C.5 findings never go in `issues.draft.json`.** They route to the §7 upstream-escalation note (chat-client output filter for injection-shaped, model-layer safety for model-shaped). Filing them as MCP/skill defects produces security theater per issue #21.
 - If a skill instruction conflicts with what looks faster or simpler, the skill wins. Surface the conflict to the user before deviating.
+
+## Preflight gate (PreToolUse hook on `Agent`)
+
+The Phase 2.5 cost-preflight rule above is enforced by a **PreToolUse hook** at `.claude/hooks/preflight_gate.sh`, registered in `.claude/settings.json`. The hook physically blocks `Agent` tool calls during a smoke-test batch unless the batch's `.preflight-confirmed` stamp file exists.
+
+Flow:
+
+1. `python3 tools/sample_matrix_run.py next-batch` writes `runs/matrix-sampled/batch-NN/scripts.json` and marks the batch `in_progress` in `progress.json`.
+2. The orchestrator surfaces the cost preflight block to the user (sample, role distribution, A.5/C.5 share, E control share, Haiku throughput, Opus analysis cost, wall-clock estimate, filing target).
+3. **User says "go" / "OK"** explicitly for THIS batch.
+4. The orchestrator runs `touch runs/matrix-sampled/batch-NN/.preflight-confirmed`. This `touch` is the only place the stamp is created and is pre-approved in `.claude/settings.json`.
+5. Subsequent `Agent` calls pass the hook (stamp present).
+
+If the orchestrator forgets step 2-3 and tries to dispatch directly, the hook exits 1 with a stderr message naming the missing stamp. The orchestrator must then go back to step 2.
+
+**Bypass for non-smoke-test work mid-batch**: if you need an `Agent` call unrelated to the batch while a batch is in_progress (rare in this single-purpose repo), either complete/pause the batch first, or delete the stamp + reset the in_progress entry temporarily. Documented in the hook script's stderr output.
+
+**Why this hook exists**: prior session (batch-2 in this repo) showed the orchestrator can mentally skip the cost-preflight rule even when CLAUDE.md says "mandatory". The hook makes the gate physical, not advisory.
