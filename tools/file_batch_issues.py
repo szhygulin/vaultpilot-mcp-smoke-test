@@ -11,6 +11,7 @@ Usage:
   python3 tools/file_batch_issues.py --batch N --repo owner/repo
   python3 tools/file_batch_issues.py --batch N --repo owner/repo --dry-run
   python3 tools/file_batch_issues.py --batch N --repo owner/repo --only 1,3,7
+  python3 tools/file_batch_issues.py --batch N --repo owner/repo --exclude 2,4
 
 Input schema (`issues.draft.json`):
 {
@@ -20,6 +21,12 @@ Input schema (`issues.draft.json`):
     {
       "title": "<≤120 chars>",
       "labels": ["security_finding", "tool_gap"],
+      "attribution": "mcp-defect",   # optional, default mcp-defect; one of:
+                                      #   mcp-defect | skill-defect |
+                                      #   advisory-injection-shaped |
+                                      #   advisory-model-shaped
+                                      # used by orchestrator GATE 2 + dry-run
+                                      # display; not rendered in issue body.
       "summary": "1-2 paragraphs of context",
       "repro": "scripts X, Y, Z (free-form)",
       "suggested_fix": "concrete API/behavior change",
@@ -92,8 +99,9 @@ def _file_one(issue: dict, body: str, repo: str, dry_run: bool) -> str:
     for label in issue.get("labels", []):
         cmd.extend(["--label", label])
     if dry_run:
-        print(f"  [dry-run] {' '.join(repr(c) for c in cmd[:5])} ... "
-              f"(+{len(issue.get('labels', []))} labels)")
+        attribution = issue.get("attribution", "mcp-defect")
+        labels_str = ",".join(issue.get("labels", [])) or "—"
+        print(f"  [dry-run] [{attribution}] [{labels_str}] {issue['title'][:100]}")
         return f"DRY-RUN-{issue['title'][:40]}"
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -130,6 +138,9 @@ def main() -> None:
     ap.add_argument("--only", default=None,
                     help="Comma-separated 1-based indices to file (e.g. '1,3,5'); "
                          "default: all")
+    ap.add_argument("--exclude", default=None,
+                    help="Comma-separated 1-based indices to skip (e.g. '2,4'); "
+                         "default: none. Mutually exclusive with --only.")
     args = ap.parse_args()
 
     draft_path = _batch_dir(args.batch) / "issues.draft.json"
@@ -147,13 +158,25 @@ def main() -> None:
     if args.only:
         only_set = {int(x.strip()) for x in args.only.split(",") if x.strip()}
 
-    print(f"Filing {sum(1 for i in range(len(issues)) if not only_set or (i+1) in only_set)} "
-          f"of {len(issues)} draft issues against {args.repo}"
+    exclude_set = set()
+    if args.exclude:
+        exclude_set = {int(x.strip()) for x in args.exclude.split(",") if x.strip()}
+
+    if only_set and exclude_set:
+        sys.exit("error: --only and --exclude are mutually exclusive")
+
+    to_file_count = sum(
+        1 for i in range(1, len(issues) + 1)
+        if (not only_set or i in only_set) and i not in exclude_set
+    )
+    print(f"Filing {to_file_count} of {len(issues)} draft issues against {args.repo}"
           f"{' (DRY-RUN)' if args.dry_run else ''}\n")
 
     urls = []
     for i, issue in enumerate(issues, start=1):
         if only_set and i not in only_set:
+            continue
+        if i in exclude_set:
             continue
         body = _format_body(issue, args.batch, draft.get("source_attribution"))
         print(f"[{i}/{len(issues)}] {issue['title'][:80]}")

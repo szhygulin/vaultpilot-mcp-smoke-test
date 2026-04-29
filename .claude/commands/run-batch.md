@@ -9,7 +9,7 @@ Runs the next pending batch of the vaultpilot-mcp adversarial smoke test through
 ## Manual gates (the only places you'll be asked anything)
 
 1. **Cost preflight gate.** After `next-batch` prints the per-batch role distribution + Opus analysis cost + filing target, you'll be asked for explicit OK on this specific batch. A "go" on batch N does NOT carry over to batch N+1 (per CLAUDE.md).
-2. **Filing dry-run gate.** After Phase 5 produces `findings.md` + `issues.draft.json`, the filer dry-runs and surfaces the planned issue titles + label sets. You'll be asked one OK on the full set; on OK, all issues file in one go.
+2. **Filing exclusion gate.** After Phase 5 produces `findings.md` + `issues.draft.json`, the orchestrator dry-runs the filer and surfaces all findings as a numbered list with attribution + one-line description. You reply with comma-separated indices to **exclude** (or 'none' to file everything). The filer then files the remaining set in one go.
 
 ## Steps the orchestrator follows verbatim
 
@@ -21,9 +21,9 @@ Runs the next pending batch of the vaultpilot-mcp adversarial smoke test through
 6. **`python3 tools/sample_matrix_run.py mark-completed --batch NN`** — marks completed in `progress.json` and auto-runs the aggregate (writes `summary.txt` + `aggregate.json`).
 7. **Phase 5 analysis subagent.** Spawn one `Agent` call: `subagent_type: general-purpose`, `model: opus`, prompt = canonical Phase 5 prompt (filling in `<MCP-NAME>` and `<workdir>`). Subagent reads `summary.txt` + selectively reads `transcripts/*.txt` + cross-references prior-batch findings. Returns markdown analysis + a fenced ```json-issues-draft``` block.
 8. **Persist analysis.** Parent agent writes the markdown to `runs/matrix-sampled/batch-NN/findings.md` and the JSON to `runs/matrix-sampled/batch-NN/issues.draft.json`.
-9. **`python3 tools/file_batch_issues.py --batch NN --repo szhygulin/vaultpilot-mcp --dry-run`** — preview the planned `gh issue create` calls.
-10. **GATE 2 — surface dry-run summary, ask user.** Show the planned issue titles + label sets in a markdown table. Ask: "OK to file all N issues against szhygulin/vaultpilot-mcp?". Wait for affirmative.
-11. **`python3 tools/file_batch_issues.py --batch NN --repo szhygulin/vaultpilot-mcp`** — files all issues, appends URLs to `runs/matrix-sampled/batch-NN/issues.md`.
+9. **`python3 tools/file_batch_issues.py --batch NN --repo szhygulin/vaultpilot-mcp --dry-run`** — preview the planned `gh issue create` calls. Each issue prints as `[<attribution>] [<labels>] <title>`.
+10. **GATE 2 — surface all findings, ask for exclusions.** Read `runs/matrix-sampled/batch-NN/issues.draft.json`. Print to chat as a numbered table: `# | attribution | labels | one-line title`. Below the table, ask: "Reply with comma-separated indices to **exclude** from filing (or 'none' to file all)." Wait for user response.
+11. **`python3 tools/file_batch_issues.py --batch NN --repo szhygulin/vaultpilot-mcp [--exclude X,Y,Z]`** — files all non-excluded issues, appends URLs to `runs/matrix-sampled/batch-NN/issues.md`. Pass `--exclude` only if the user named indices; omit it if the user said 'none'.
 12. **`tools/post_batch_commit.sh NN`** — branches (`batch-NN-results`), commits batch-NN artifacts + `progress.json`, pushes, opens PR.
 13. **Report final summary.** Tell the user: batches done, issue URLs filed, PR URL.
 

@@ -330,10 +330,9 @@ def cmd_next_batch(args: argparse.Namespace) -> None:
           f"newcomer: {audience_counts.get('newcomer', 0)})")
     print(f"            roles: {role_summary}")
     if out_of_scope:
-        print(f"            ℹ {out_of_scope} A.5/C.5 cells are advisory-only — "
-              f"routed to §7 upstream-escalation (chat-client filter / model "
-              f"safety) per issue #21. Tracked in findings.md, NOT filed via "
-              f"issues.draft.json.")
+        print(f"            ℹ {out_of_scope} A.5/C.5 cells are advisory-text-only. "
+              f"Findings get attribution `advisory-*` in issues.draft.json; user "
+              f"picks at GATE 2 which to file (default: file all).")
     if control:
         print(f"            ℹ {control} E cells are control (everyone honest); "
               f"any defense_layer firing on these is a false-positive finding.")
@@ -688,7 +687,7 @@ def _aggregate_batch(batch_n: int, transcripts_dir: str | None = None,
         print(f"  transcripts:          {len(records)}")
         print(f"  by role:              {dict(by_role)}")
         if by_a5_attribution:
-            print(f"  A.5/C.5 attribution:  {dict(by_a5_attribution)} (routed to §7)")
+            print(f"  A.5/C.5 attribution:  {dict(by_a5_attribution)} (analyst tags as `advisory-*` in issues.draft.json)")
         print(f"  by outcome status:    {dict(by_outcome_status)}")
         if by_refusal_class:
             print(f"  by refusal class:     {dict(by_refusal_class)}")
