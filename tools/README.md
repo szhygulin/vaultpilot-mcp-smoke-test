@@ -25,7 +25,7 @@ python3 tools/file_batch_issues.py --batch N --repo OWNER/REPO
 python3 tools/file_batch_issues.py --batch N --repo OWNER/REPO --only 1,3,7
 ```
 
-Input: `runs/matrix-sampled/batch-NN/issues.draft.json` (schema documented in the file's docstring; the Phase 5 analysis subagent emits it per `skill/SKILL.md` Phase 5 step 5.5). Output: appends a markdown table of filed-issue URLs to `runs/matrix-sampled/batch-NN/issues.md`.
+Input: `runs/matrix-sampled/batch-NN/issues.draft.json` (schema documented in the file's docstring; the Phase 5 analysis subagent emits it per `CLAUDE.md` *Smoke-test methodology* section, Phase 5 step 5.5). Output: appends a markdown table of filed-issue URLs to `runs/matrix-sampled/batch-NN/issues.md`.
 
 Pre-req: `gh auth status` clean. Labels referenced in `issues.draft.json` must exist on the repo (or be pre-created via `gh label create`); the script does not auto-create labels.
 

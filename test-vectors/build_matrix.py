@@ -76,7 +76,7 @@ def main() -> None:
             'Concatenation of expert-matrix.json + newcomer-matrix.json with '
             'explicit `audience` field. Single source of truth for sampling — '
             f'rebuild via test-vectors/build_matrix.py after editing either source. '
-            f'See ../skill/SKILL.md for methodology.'
+            f'See ../CLAUDE.md (Smoke-test methodology section) for methodology.'
         ),
         'roleLegend': expert['roleLegend'],
         'addressBook': expert['addressBook'],

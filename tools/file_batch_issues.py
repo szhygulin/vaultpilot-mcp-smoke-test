@@ -136,7 +136,7 @@ def main() -> None:
     if not draft_path.exists():
         sys.exit(f"draft not found: {draft_path}\n"
                  f"the analysis subagent must produce this file as part of "
-                 f"Phase 3.6 (per skill/SKILL.md)")
+                 f"Phase 3.6 (per CLAUDE.md Smoke-test methodology section)")
 
     draft = json.loads(draft_path.read_text())
     issues = draft.get("issues", [])

@@ -25,16 +25,11 @@ This is the workflow distilled from the actual run that produced this corpus. Fo
 - **Companion preflight / security skill** (if testing a wallet or signing-surface MCP) installed at `~/.claude/skills/<preflight-skill>/SKILL.md`. The adversarial defenses are measured against this skill; without it, "did the defense catch the attack?" has no defined success criterion.
 - **Disk + token budget.** A 220-script run is roughly 6–7M tokens of subagent fanout + analysis. Budget accordingly.
 
-### 1. Install the synthesized methodology skill
+### 1. No skill install needed
 
-```bash
-mkdir -p ~/.claude/skills/mcp-smoke-test
-cp <this-repo>/skill/SKILL.md ~/.claude/skills/mcp-smoke-test/SKILL.md
-# OR symlink so the install tracks repo updates:
-ln -sf "$(pwd)/skill/SKILL.md" ~/.claude/skills/mcp-smoke-test/SKILL.md
-```
+The methodology lives in `CLAUDE.md` (always loaded by Claude Code in this repo). Just clone the repo and open it in Claude Code; the `Smoke-test methodology` section is auto-loaded into every session.
 
-Restart Claude Code so the skill loader picks up the new directory. After restart you'll see `mcp-smoke-test` listed in the available-skills section of any new session.
+Earlier versions of this README walked through installing a separate skill at `~/.claude/skills/mcp-smoke-test/`. That install is no longer needed (Lane 2 of the 4-lane overhaul, 2026-04-29). See the *Trade-offs* section below for why we moved it inline.
 
 ### 2. Pick a test vector
 
@@ -46,7 +41,7 @@ Three catalogs ship in [`test-vectors/`](test-vectors/), each tested in producti
 | [`adversarial.json`](test-vectors/adversarial.json) | Pass 2 — red-team the defense surface against expert prompts. | 111 | A 25, B 44, C 5, D 1, E 4 (initial) + 67 b-scripts |
 | [`newcomer-adversarial.json`](test-vectors/newcomer-adversarial.json) | Pass 3 — newcomer search-term style prompts, high Role-A density (newcomers don't recognize risk patterns). | 220 | A 104, B 7, C 1, D 2, E 106 |
 
-Or generate your own — see `skill/SKILL.md` Phase 2 for catalog targets.
+Or generate your own — see `CLAUDE.md (Smoke-test methodology section)` Phase 2 for catalog targets.
 
 ### 3. Set up a workdir
 
@@ -91,11 +86,11 @@ Use the time productively. Don't kill the parent session.
 Once all transcripts land, the skill:
 
 1. Concatenates `transcripts/*.txt` → `all_transcripts.txt`
-2. Runs the Python parser (Phase 5.2 in `skill/SKILL.md`) → `summary.txt`
+2. Runs the Python parser (Phase 5.2 in `CLAUDE.md (Smoke-test methodology section)`) → `summary.txt`
 3. Delegates to a **fresh analysis subagent** with the canonical prompt (Phase 5.4)
 4. Writes the subagent's reply → `findings.md`
 
-The analysis is mandatory in a separate subagent; the parent has too much context bloat from dispatch to produce honest analysis. See the "How exactly to analyze the chat histories" section of `skill/SKILL.md` for the recipe.
+The analysis is mandatory in a separate subagent; the parent has too much context bloat from dispatch to produce honest analysis. See the "How exactly to analyze the chat histories" section of `CLAUDE.md (Smoke-test methodology section)` for the recipe.
 
 ### 7. File feedback (Phase 6)
 
@@ -129,9 +124,12 @@ For protection rules matching this repo, see `gh api -X PUT repos/.../branches/m
 .
 ├── SUMMARY.md                         # cross-pass executive overview (start here)
 ├── README.md                          # this file
+├── CLAUDE.md                          # methodology — Smoke-test methodology section is the synthesized 6-phase pipeline (was skill/SKILL.md before Lane 2)
 │
-├── skill/                             # methodology
-│   └── SKILL.md                       # synthesized 6-phase pipeline; honest + adversarial modes
+├── .claude/                           # project-scope Claude Code config
+│   ├── settings.json                  # hooks (PreToolUse preflight gate) + base permissions
+│   ├── commands/run-batch.md          # /run-batch slash command (Lane 4)
+│   └── hooks/preflight_gate.sh        # blocks Agent calls without preflight stamp (Lane 3)
 │
 ├── tools/                             # helper scripts shelled out to between subagent dispatches
 │   ├── concat_transcripts.sh          # Phase 4: transcripts/*.txt → all_transcripts.txt
@@ -189,3 +187,48 @@ This corpus is a frozen snapshot. To re-run on a future vaultpilot-mcp release, 
 - Adversarial subagents simulated attacks via transcript narration — no actual exfiltration, no real broadcasts.
 - ~30% of read-only scripts in Pass 1 hit Claude Code subagent permission denials. Documented as a meta-finding; not a vaultpilot bug.
 - The corpus is signing-flow-heavy. Several CF-* surfaces (BIP-137 message signing, EIP-712 typed-data, EIP-7702 setCode) are under-sampled in the adversarial pass and remain documented by 1–3 scripts each.
+
+---
+
+## Trade-offs
+
+This repo's smoke-test pipeline embeds methodology + tooling into CLAUDE.md (loaded into every session) rather than a separately-installed skill, with PreToolUse hooks enforcing critical gates. The trade-offs below were the reasoning behind that design after running batches 1 and 2.
+
+### Lane 4 — Autonomous batch run (`/run-batch`)
+
+| Choice | Trade-off |
+| --- | --- |
+| One slash command (`/run-batch`) for the whole pipeline | + Single entry point, hard to skip steps. − Less flexibility if a batch needs a custom variant; would need a new slash command. |
+| 2 manual user gates (preflight, filing) | + Cost-incurring + GitHub-visible actions stay user-confirmed. − Slightly slower than full auto. |
+| Auto-commit on this repo (branch + PR) | + No manual git work per batch. − If `tools/post_batch_commit.sh` has a bug, it bakes into every batch until fixed. Mitigated by branch (never main) + PR (reviewable). |
+
+### Lane 3 — PreToolUse hook enforces preflight
+
+| Choice | Trade-off |
+| --- | --- |
+| Block ALL `Agent` calls during in_progress batch (no smart matcher) | + Simple + loud + fail-safe. − Non-smoke-test Agent calls during a batch are blocked too; have to complete/pause batch first. |
+| Hook in `.claude/settings.json` (project scope) | + Repo-local; doesn't affect other projects. − Anyone cloning this repo gets the hook; documented in CLAUDE.md to avoid surprises. |
+| Stamp-file based (`.preflight-confirmed` per batch) | + Simple state machine; one file = "confirmed". − If the stamp is created without explicit user OK (e.g. by mistake), the gate is bypassed. Discipline: only `touch` after the user says "go". |
+
+### Lane 1 — No silent skips
+
+| Choice | Trade-off |
+| --- | --- |
+| `parse_failures` list in `aggregate.json` instead of opaque `unknown` bucket | + Every parse failure surfaces in Phase 5 §0. − Slightly larger aggregate.json; analysis prompt has one extra mandatory section. |
+| `refusal_class` taxonomy (5 classes) on subagent reports | + Distinguishes tool-gap from security-refusal. − Subagent prompt is one field longer; one more thing for Haiku to get right. |
+| E false-positive heuristic tightening (require `refused` AND not `tool-gap`) | + Removes 100% of the noise we observed. − Risk of missing a genuine over-trigger if a future flow has `success` status with a defense firing. Re-evaluate after batches 3-4. |
+| Default include (don't silently skip malformed cells); `next-batch` exits 1 on malformed cell | + Users see every test that ran. − A single bad cell halts dispatch until resolved; some friction for hand-edited matrix.json. |
+| "OUT OF SCOPE" → "Routed to §7" wording sweep | + Less dismissive read; analyst doesn't drop A.5/C.5 findings. − Slightly longer text in many places. Same routing decision. |
+
+### Lane 2 — Skill content in CLAUDE.md
+
+| Choice | Trade-off |
+| --- | --- |
+| Full merge of all ~58k chars of skill content into CLAUDE.md | + Single source of truth, always loaded, no install dance. − Every session in this repo loads ~58k chars of methodology even if not running smoke tests. |
+| Delete `skill/` directory | + No drift between two files. − Loses the "minimal skill file you can install elsewhere" portability claim from the previous README §1. |
+| Drop `~/.claude/skills/mcp-smoke-test/` install | + No symlink/file-copy dance. − Skill-discovery / `/skills` dialog won't show this methodology. Users find it via reading CLAUDE.md instead. |
+| Repo becomes single-purpose for smoke-test work | + Sessions in this repo are dedicated to smoke-testing; other work belongs in other repos. − Harder to use this repo as a general scratch space. |
+
+### Combined trade-off: enforced flow vs. flexibility
+
+The four lanes together create a **strong opinion + safety-rail pipeline**: do this exact thing in this exact order, with hard blocks if you skip a step. Quality-of-life gain is large (~6 manual gates → 2). Cost is reduced agility for one-off / experimental flows; if you want to do something off-script, you have to deliberately work around the gates (delete stamp file, ignore slash command, etc.). For a pipeline that runs the same 14-role × 670-row matrix in 181 deterministic batches, the trade is right.

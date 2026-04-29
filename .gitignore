@@ -3,4 +3,6 @@
 *.tmp
 __pycache__/
 node_modules/
-.claude/
+# .claude/ is project methodology (settings.json, commands/, hooks/) — track it.
+# Only the per-developer local-overrides file is ignored.
+.claude/settings.local.json
