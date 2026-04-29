@@ -6,3 +6,6 @@ node_modules/
 # .claude/ is project methodology (settings.json, commands/, hooks/) — track it.
 # Only the per-developer local-overrides file is ignored.
 .claude/settings.local.json
+
+# tests/run-all.sh writes per-suite logs here on every run; not for tracking.
+tests/.last-run/
