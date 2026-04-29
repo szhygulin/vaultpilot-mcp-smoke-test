@@ -29,6 +29,9 @@ assert_contains "$OUT" "Do NOT use Bash with" "A.1: no-bash-cat guidance"
 assert_contains "$OUT" "20 substantive tool calls" "A.1: 20-call hard cap"
 assert_contains "$OUT" "wrote " "A.1: reply-only-wrote-path rule"
 assert_contains "$OUT" "Do NOT ask for clarification" "A.1: no-pushback rule"
+assert_contains "$OUT" "transcript content goes in the FILE" "A.1: cell-48 robustness rule (Write tool not chat)"
+assert_contains "$OUT" "Don't be that cell" "A.1: cell-48 past-failure reference"
+assert_contains "$OUT" "Use the Write tool to save the transcript" "A.1: explicit Write-tool instruction"
 
 # Test 2: A.5 cell — a5_attribution REQUIRED, with both choices
 OUT=$(python3 "$BUILDER" --scripts "$FIXTURE" --cell-id synth-002-A.5)
@@ -73,13 +76,9 @@ set -e
 assert_exit_code 1 "$EC" "malformed cell → exit 1"
 assert_contains "$OUT" "missing required keys" "stderr names the missing keys"
 
-# Test 8: --batch and --scripts are mutually exclusive
-set +e
-OUT=$(python3 "$BUILDER" --batch 1 --scripts "$FIXTURE" --cell-id synth-001-A.1 2>&1)
-EC=$?
-set -e
-assert_exit_code 1 "$EC" "--batch + --scripts → exit 1"
-assert_contains "$OUT" "mutually exclusive" "stderr explains mutual exclusivity"
+# Test 8: --batch + --scripts now compatible (batch tags the save path)
+OUT=$(python3 "$BUILDER" --batch 7 --scripts "$FIXTURE" --cell-id synth-001-A.1)
+assert_contains "$OUT" "batch-07/transcripts/synth-001-A.1.txt" "--batch tags save path even when --scripts also passed"
 
 # Test 9: missing both --batch and --scripts → exit 1
 set +e

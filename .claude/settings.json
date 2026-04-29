@@ -26,11 +26,13 @@
       "Bash(python3 tools/file_batch_issues.py --batch * --repo szhygulin/vaultpilot-mcp *)",
       "Bash(python3 tools/file_batch_issues.py --batch * --repo szhygulin/vaultpilot-mcp)",
       "Bash(python3 tools/build_dispatch_prompt.py *)",
+      "Bash(python3 tools/prepare_dispatch.py *)",
       "Bash(python3 test-vectors/build_*matrix.py)",
       "Bash(python3 test-vectors/build_matrix.py)",
       "Bash(touch runs/matrix-sampled/batch-*/.preflight-confirmed)",
       "Bash(tools/post_batch_commit.sh *)",
       "Bash(./tools/post_batch_commit.sh *)",
+      "Bash(bash tools/post_batch_commit.sh *)",
 
       "Bash(cat *)",
       "Bash(head *)",
@@ -38,7 +40,21 @@
       "Bash(ls *)",
       "Bash(wc *)",
       "Bash(grep *)",
-      "Bash(find *)"
+      "Bash(find *)",
+      "Bash(comm *)",
+      "Bash(sort *)",
+      "Bash(sed *)",
+      "Bash(diff *)",
+
+      "Bash(git fetch)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(git log *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git branch *)"
     ]
   }
 }
