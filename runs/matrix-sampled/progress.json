@@ -21,9 +21,9 @@
     {
       "batch": 3,
       "cell_count": 50,
-      "status": "pending",
-      "started_at": null,
-      "completed_at": null,
+      "status": "completed",
+      "started_at": "2026-04-29T08:40:46Z",
+      "completed_at": "2026-04-29T09:35:37Z",
       "transcripts_dir": null
     },
     {
