@@ -57,6 +57,10 @@ SAMPLE_DIR = f'{REPO}/runs/matrix-sampled'
 PARTITION_PATH = f'{SAMPLE_DIR}/partition.json'
 PROGRESS_PATH = f'{SAMPLE_DIR}/progress.json'
 
+# Make sibling modules in tools/ importable when this file runs as a script.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from surface_taxonomy import is_low_yield  # noqa: E402
+
 # Defaults align with skill/SKILL.md Phase 2.5 anchors.
 # Bucket model on Max x20 (verified from user's dashboard 2026-04-28):
 #   - Per-cell dispatch runs on Haiku — quota-free, doesn't deplete any
@@ -89,16 +93,33 @@ def _now() -> str:
     return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
 
 
-def _flatten_all() -> list[dict]:
+def _flatten_all(apply_surface_filter: bool = True) -> list[dict]:
     """Flatten the unified matrix into one cell per (row, role).
-    Each row carries an `audience` tag (expert | newcomer) preserved here."""
+    Each row carries an `audience` tag (expert | newcomer) preserved here.
+
+    When `apply_surface_filter` is True (default), low-yield (category, role)
+    pairs are excluded — these are pairs where the role's attack surface
+    cannot materialize for the category (e.g. A.3 set-level lies on
+    tax_regulatory, F rogue-RPC on aa_education). See
+    `tools/surface_taxonomy.py` for the filter rules.
+
+    Set apply_surface_filter=False (or env SAMPLE_MATRIX_NO_SURFACE_FILTER=1)
+    to bypass — useful for measuring the n/a baseline before the filter
+    landed.
+    """
+    if os.environ.get('SAMPLE_MATRIX_NO_SURFACE_FILTER') == '1':
+        apply_surface_filter = False
+
     matrix = json.load(open(MATRIX_PATH))
     roles = list(matrix['roleLegend'].keys())
     cells = []
     for row in matrix['rows']:
+        category = row.get('category', '')
         for role in roles:
             if row['cells'].get(role) is None:
                 continue  # row may not define every role; skip empties
+            if apply_surface_filter and is_low_yield(category, role):
+                continue  # role's surface doesn't materialize for this category
             cells.append({
                 'audience': row.get('audience', 'unknown'),
                 'row_id': row['id'],

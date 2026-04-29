@@ -21,7 +21,7 @@ mkdir -p "$TMP/test-vectors" "$TMP/runs/matrix-sampled" "$TMP/tools"
 write_synth_matrix "$TMP/test-vectors/matrix.json"
 write_synth_partition "$TMP/runs/matrix-sampled/partition.json"
 write_synth_progress "$TMP/runs/matrix-sampled/progress.json" 99 pending
-cp "$REPO_ROOT/tools/sample_matrix_run.py" "$TMP/tools/"
+cp "$REPO_ROOT/tools/sample_matrix_run.py" "$REPO_ROOT/tools/surface_taxonomy.py" "$TMP/tools/"
 
 # Test 1: happy path — next-batch produces scripts.json + transcripts/ dir
 #         and marks in_progress.

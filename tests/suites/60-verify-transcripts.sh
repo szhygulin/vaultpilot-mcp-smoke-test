@@ -17,7 +17,7 @@ TMP=$(mktempdir)
 trap 'cleanup_tempdir "$TMP"' EXIT
 
 mkdir -p "$TMP/runs/matrix-sampled/batch-99/transcripts" "$TMP/tools"
-cp "$REPO_ROOT/tools/sample_matrix_run.py" "$TMP/tools/"
+cp "$REPO_ROOT/tools/sample_matrix_run.py" "$REPO_ROOT/tools/surface_taxonomy.py" "$TMP/tools/"
 
 # Test 1: clean transcripts → exit 0, no patches needed
 cp "$REPO_ROOT/tests/fixtures/well-formed.txt" "$TMP/runs/matrix-sampled/batch-99/transcripts/"
