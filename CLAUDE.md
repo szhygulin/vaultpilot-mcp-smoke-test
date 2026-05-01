@@ -22,6 +22,14 @@ Every instruction in the *Smoke-test methodology* section below is **mandatory**
 - **All findings go to `issues.draft.json` with `attribution`; user picks exclusions at GATE 2.** Never silently drop a finding. Advisory (A.5/C.5) findings are no longer auto-routed away from filing — the user judges per finding.
 - If a methodology instruction conflicts with what looks faster, methodology wins. Surface the conflict before deviating.
 
+## Bugs surfaced during a batch run
+
+If a bug surfaces during batch execution (orchestrator, helper subcommands, dispatch hook, transcript parser, MCP tool itself, companion skill — anything that isn't a per-cell finding already routed through Phase 5), surface it to the user immediately with a suggested fix direction. Don't silently route around it, don't wait for the batch to finish.
+
+Format: one line on what broke + one line on the suggested fix (concrete file/function/behavior change, not "investigate further") + which repo it belongs in (`vaultpilot-smoke-test` tooling vs `vaultpilot-mcp` vs companion skill repo). User decides whether to fix mid-batch, file an issue, or defer.
+
+This is separate from per-cell findings — those go through `issues.draft.json` at GATE 2. This rule covers infrastructure bugs that block or distort the batch itself.
+
 ## Preflight gate (PreToolUse hook on `Agent`)
 
 `.claude/hooks/preflight_gate.sh` (registered in `.claude/settings.json`) physically blocks `Agent` calls during a batch unless `runs/matrix-sampled/batch-NN/.preflight-confirmed` exists. Flow:
