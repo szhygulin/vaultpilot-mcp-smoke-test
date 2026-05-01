@@ -1,16 +1,11 @@
 # Project rules for Claude
 
-## Git workflow
+> **Generic process rules live in `~/.claude/CLAUDE.md`** (auto-loaded by Claude Code from the private [claude-md-global](https://github.com/szhygulin/claude-md-global) repo). The rules below are project-specific or override global defaults.
 
-- **Never push directly to `main`.** Bypass rights exist; the maintainer still expects all changes via PR.
-- "Commit and push" means: feature branch → commit → `push -u` → `gh pr create` → return URL.
-- If sitting on `main` with local commits, move them to a new branch before pushing. Reset `main` to `origin/main` only after the new branch is pushed.
-- Before force-pushing or rebasing a pushed branch, confirm with user.
-- **Branch every PR off `origin/main`** — don't stack PRs. Resolve conflicts at merge time via rebase + `--force-with-lease`.
-- **Sync to `origin/main` before starting any feature/fix work** (`git fetch origin main && git rebase origin/main`).
-- **Each new feature/fix lives in its own `git worktree`** under `.claude/worktrees/<branch-name>`. Recipe: `cd /home/szhygulin/dev/recon-mcp && git fetch origin main && git worktree add .claude/worktrees/<short-name> -b <branch-name> origin/main`. **Always `cd` to repo root before `git worktree add`** — the path is relative; chained tasks otherwise nest worktrees inside prior ones. Run `pwd` if uncertain.
-- **Don't watch CI unless the user explicitly asks.** Default after push: report PR URL + one-line summary, then stop. When asked, use `gh pr checks <PR>` / `gh run watch <id> --exit-status`; if a run hangs >5 min past typical, retrigger via `gh run rerun <id> --failed` or empty commit.
-- **PR body must use `Closes #N` bound directly to the issue number** to auto-close on merge. `Closes #432.` or `Closes part of #439 — …` works; prose-only references (`Closes the gap from script 072`) and parenthetical title refs (`feat(x): add Y (#447)`) do NOT. Lead the PR body with `Closes #N` on its own line.
+## Git workflow — project-specific
+
+- Repo root: `/home/szhygulin/dev/vaultpilot-smoke-test`. Worktree path template: `.claude/worktrees/<branch-name>` (relative). Run `pwd` after `cd /home/szhygulin/dev/vaultpilot-smoke-test` if uncertain — the global rule's "cd repo root before worktree add" applies.
+- Default base for new branches: `origin/main`. No stacking — global "branch every new PR off the base branch" applies.
 
 ## Test workdir stays inside this repo
 
@@ -70,37 +65,6 @@ Canonicalization failures land in `parse_failures` in `aggregate.json`. The Phas
 - Before preparing any on-chain tx: verify (1) sufficient native gas/bandwidth (TRX bandwidth on TRON), (2) pause status on lending markets (`isWithdrawPaused`, `isSupplyPaused`), (3) min borrow/supply thresholds, (4) approval status for ERC20.
 - Never use `uint256.max` for collateral withdrawal; fetch and use the exact balance.
 - For multi-step flows (approve + action), wait for approval confirmation before sending the dependent tx.
-
-## Tool usage discipline
-
-- Don't repeat the same informational tool call within a single turn. Cache mentally.
-- If a tool returns ambiguous/empty data, verify once via a different method; don't enter polling loops without consent.
-
-## SDK scope-probing discipline
-
-When a plan proposes adopting a new third-party SDK, scope-probe BEFORE committing the plan via the `rnd` skill: `npm view <pkg>` for runtime deps + last-published; install into `/tmp/<pkg>-probe/` and read `dist/*.d.ts`; check the transit graph for `*-contracts`, hardhat, ethersproject v5; confirm the API exposes UNSIGNED tx output (Ledger-compatible). Document verdict in the plan as a table: SDK / version / red flags / decision (adopt / cherry-pick / skip).
-
-**Why:** PR #334 (Uniswap V3 mint) shipped `@uniswap/v3-sdk` past d.ts inspection but Snyk caught `swap-router-contracts → hardhat → @sentry/node + undici + mocha + solc` at PR-CI; ~2h to refactor. Curve/Balancer planning (2026-04-27) used the discipline to reject `@curvefi/api` and `@balancer-labs/sdk` (V2) at probe time; adopted `@balancer/sdk` (V3, viem-native) instead — 1 SDK adopted instead of 3.
-
-## Security incident response tone
-
-When diagnosing malware/compromise, scope evidence first before recommending destructive actions (wipe, nuke, rotate-all). Never delete evidence files before reading them.
-
-## Chat output formatting
-
-Prefer Markdown hyperlinks `[label](url)` over raw URLs everywhere — keeps chat scannable. Raw URLs only for short scannable domains (`https://ledger.com`) or machine-readable contexts.
-
-## Push-back discipline
-
-If the user's request is built on a faulty premise, push back BEFORE acting — not via a mid-response caveat. Tells: re-running a workflow against a frozen tag that predates the fix being applied; re-broadcasting a tx with the same nonce when the original confirmed; re-querying an API with the same args after deterministic failure; wrapping a destructive action with "this won't really do what you want, but doing it anyway".
-
-Format: one sentence on the mismatch + 2-3 alternative paths + which to pursue. If the user says "do it anyway", proceed.
-
-## Smallest-solution discipline
-
-When assessing an issue or implementing a plan entry, push back with the smallest solution that solves the stated problem. Tells the proposed solution is too big: caching/persisting a dataset to replay one operation; new module/abstraction when an inline change at the call site would do; background worker/queue for an action that fires once per request; generalizing for hypothetical future callers; "while I'm here" refactors bundled into a fix PR.
-
-Format: one sentence on the smallest fix + one sentence on what the larger proposal adds + which scope to pursue. If the user says larger scope is intended, proceed.
 
 ## Typed-data signing discipline
 
